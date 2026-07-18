@@ -1,11 +1,13 @@
 // EduPilot School ERP — Prisma schema
 //
-// Phase 0.1 (database foundation only): datasource + generator configuration.
-// No models yet — ERP tables (Tenant, Student, Teacher, Class, Attendance, ...) and the first
-// migration are introduced in a later phase per docs/PHASE_STATUS.md.
+// Sprint 1A: Core Foundation models only — Tenant, School, AcademicSession.
+// Still no migrations (see docs/PHASE_STATUS.md) and no RLS policies yet — RLS is added in
+// supabase/migrations/ once the first migration exists, per docs/DATABASE_STANDARDS.md §4.
+// Auth/RBAC (Role, Permission, UserProfile) and ERP business tables (Student, Teacher, Class,
+// Attendance, ...) are out of scope for this sprint — see docs/PHASE_STATUS.md for sequencing.
 //
 // See docs/DATABASE_STANDARDS.md for naming, RLS, and migration conventions this schema must
-// follow once models are added.
+// follow.
 
 generator client {
   provider = "prisma-client"
@@ -18,4 +20,152 @@ generator client {
 // and .env.example for the two connection strings this project uses (pooled vs. direct).
 datasource db {
   provider = "postgresql"
+}
+
+// --- Enums --------------------------------------------------------------------------------
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum SubscriptionPlan {
+  FREE
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum Board {
+  CBSE
+  ICSE
+  STATE_BOARD
+  IB
+  IGCSE
+  OTHER
+}
+
+enum AcademicSessionStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+// --- Core Foundation models ----------------------------------------------------------------
+
+// A Tenant is one customer account (one private school organization) on the EduPilot
+// platform — the root of multi-tenancy. Every other tenant-scoped table carries a `tenantId`
+// foreign key back to this table; RLS policies (added later, in supabase/migrations/) enforce
+// isolation between tenants at the database level using that column.
+model Tenant {
+  id   String @id @default(uuid()) @db.Uuid
+  name String
+  slug String @unique
+
+  status             TenantStatus       @default(ACTIVE)
+  subscriptionPlan   SubscriptionPlan   @default(FREE) @map("subscription_plan")
+  subscriptionStatus SubscriptionStatus @default(TRIALING) @map("subscription_status")
+
+  timezone String
+  locale   String
+  currency String
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  school           School?
+  academicSessions AcademicSession[]
+
+  @@index([status])
+  @@index([subscriptionStatus])
+  @@map("tenants")
+}
+
+// A School is the single institution owned by a Tenant. EduPilot models exactly one School
+// per Tenant for this version of the product — there is no Campus/Branch concept; a school
+// with multiple physical locations is still one School record.
+model School {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @unique @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolName         String  @map("school_name")
+  shortName          String? @map("short_name")
+  registrationNumber String  @map("registration_number")
+  board              Board
+  principalName      String  @map("principal_name")
+  email              String
+  phone              String
+  website            String?
+  address            String
+  city               String
+  district           String
+  state              String
+  country            String
+  postalCode         String  @map("postal_code")
+  logoUrl            String? @map("logo_url")
+  isActive           Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  academicSessions AcademicSession[]
+
+  // Composite unique alongside the PK — required so AcademicSession can enforce, via a real
+  // foreign key, that its (tenantId, schoolId) pair always points to a School actually owned
+  // by that tenant (see AcademicSession.school below). `tenantId` is already unique on its
+  // own; this compound constraint exists purely to give Postgres a target for that FK.
+  @@unique([tenantId, id])
+  @@index([schoolName])
+  @@map("schools")
+}
+
+// An AcademicSession is one school year (e.g. "2025-2026") scoped to a Tenant and its School.
+// Enrollment, attendance, and other year-scoped data will reference an AcademicSession in
+// later sprints.
+model AcademicSession {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  schoolId String @map("school_id") @db.Uuid
+
+  // Composite FK to School's (tenantId, id) compound unique, instead of a plain `schoolId ->
+  // School.id` reference. This makes it impossible at the database level to create a session
+  // whose `tenantId` and `schoolId` disagree about which tenant owns it — closing a gap where
+  // `tenantId` (kept directly on this table for RLS/query performance, see docs/DATABASE_
+  // STANDARDS.md §7) could otherwise silently drift out of sync with the school it's paired with.
+  school School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  sessionName String                @map("session_name")
+  startDate   DateTime              @map("start_date") @db.Timestamptz(3)
+  endDate     DateTime              @map("end_date") @db.Timestamptz(3)
+  isCurrent   Boolean               @default(false) @map("is_current")
+  status      AcademicSessionStatus @default(UPCOMING)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, sessionName])
+  @@index([tenantId, isCurrent])
+  @@index([schoolId])
+  @@map("academic_sessions")
 }
