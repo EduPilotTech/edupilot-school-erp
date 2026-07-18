@@ -1,0 +1,21 @@
+// EduPilot School ERP — Prisma schema
+//
+// Phase 0.1 (database foundation only): datasource + generator configuration.
+// No models yet — ERP tables (Tenant, Student, Teacher, Class, Attendance, ...) and the first
+// migration are introduced in a later phase per docs/PHASE_STATUS.md.
+//
+// See docs/DATABASE_STANDARDS.md for naming, RLS, and migration conventions this schema must
+// follow once models are added.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+// Prisma 7 removed datasource `url`/`directUrl` from schema files entirely — connection
+// strings now live in `prisma.config.ts` (CLI/migrations) and are passed explicitly to the
+// `@prisma/adapter-pg` driver adapter at runtime (lib/prisma.ts). See docs/DATABASE_STANDARDS.md
+// and .env.example for the two connection strings this project uses (pooled vs. direct).
+datasource db {
+  provider = "postgresql"
+}
