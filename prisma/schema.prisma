@@ -1,10 +1,11 @@
 // EduPilot School ERP — Prisma schema
 //
-// Sprint 1A: Core Foundation models only — Tenant, School, AcademicSession.
+// Sprint 1A: Core Foundation models — Tenant, School, AcademicSession.
+// Sprint 1B: RBAC models — Role, Permission, RolePermission, UserProfile, UserRole.
 // Still no migrations (see docs/PHASE_STATUS.md) and no RLS policies yet — RLS is added in
 // supabase/migrations/ once the first migration exists, per docs/DATABASE_STANDARDS.md §4.
-// Auth/RBAC (Role, Permission, UserProfile) and ERP business tables (Student, Teacher, Class,
-// Attendance, ...) are out of scope for this sprint — see docs/PHASE_STATUS.md for sequencing.
+// ERP business tables (Student, Teacher, Class, Attendance, ...) remain out of scope — see
+// docs/PHASE_STATUS.md for sequencing.
 //
 // See docs/DATABASE_STANDARDS.md for naming, RLS, and migration conventions this schema must
 // follow.
@@ -61,6 +62,18 @@ enum AcademicSessionStatus {
   ARCHIVED
 }
 
+enum RoleScope {
+  SYSTEM
+  CUSTOM
+}
+
+enum UserProfileStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
 // --- Core Foundation models ----------------------------------------------------------------
 
 // A Tenant is one customer account (one private school organization) on the EduPilot
@@ -88,6 +101,8 @@ model Tenant {
 
   school           School?
   academicSessions AcademicSession[]
+  roles            Role[]
+  userProfiles     UserProfile[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -168,4 +183,184 @@ model AcademicSession {
   @@index([tenantId, isCurrent])
   @@index([schoolId])
   @@map("academic_sessions")
+}
+
+// --- RBAC models ----------------------------------------------------------------------------
+
+// A Role is a named, assignable collection of Permissions.
+//
+// SYSTEM vs CUSTOM:
+//   - `scope = SYSTEM` roles have `tenantId = null` and are shared, read-only, across every
+//     tenant (enforced at the service/RLS layer, not by this schema).
+//   - `scope = CUSTOM` roles are owned by exactly one tenant (`tenantId` set) and are editable
+//     only by that tenant.
+//
+// Protected roles:
+//   `isProtected` is independent of `scope` and marks a role — system or custom — that must
+//   never be renamed or deleted through tenant-facing operations (e.g. Super Admin, School
+//   Admin, or a tenant's own "Owner" role they've chosen to lock down).
+//
+// `code` is restricted to SYSTEM roles only:
+//   `code` exists to give System Roles a stable, display-name-independent identifier (e.g.
+//   "TEACHER", "SUPER_ADMIN") application code can reference safely. Custom Roles MUST NOT
+//   set `code` — it is unique across the whole platform, so a Custom Role using it would risk
+//   colliding with an unrelated tenant's own Custom Role, silently blocking that tenant's
+//   write. This is a MANDATORY service-layer rule (`code` may only be non-null when
+//   `scope = SYSTEM`) — not enforced at the database level this sprint; a CHECK constraint is
+//   deferred to the first migration (see Sprint 1B Step 4 review).
+model Role {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String? @map("tenant_id") @db.Uuid
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  scope       RoleScope
+  isProtected Boolean   @default(false) @map("is_protected")
+  name        String
+  code        String?   @unique
+  description String?
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  // Does not catch a name collision between a NULL-tenant System Role and a same-named
+  // tenant Custom Role — that cross-scope check is a service-layer responsibility.
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([tenantId, scope])
+  @@map("roles")
+}
+
+// Permission is the global, code-owned catalog of every discrete action the application
+// enforces (e.g. "student.create"). It is never tenant-scoped and never tenant-writable.
+//
+// Lifecycle: a permission is added when a feature ships and retired via `isDeprecated` — never
+// hard-deleted (would orphan historical `RolePermission` grants) and never soft-deleted through
+// the standard tenant-data `deletedAt` pattern, since a permission isn't a business record a
+// tenant could "recover" — it's platform/code-owned reference data with its own lifecycle.
+// Deliberately has no `tenantId` and no `deletedAt` for this reason.
+model Permission {
+  id String @id @default(uuid()) @db.Uuid
+
+  code        String  @unique
+  resource    String
+  action      String
+  description String?
+
+  isDeprecated Boolean @default(false) @map("is_deprecated")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  rolePermissions RolePermission[]
+
+  @@index([resource])
+  @@map("permissions")
+}
+
+// RolePermission is a pure many-to-many association between Role and Permission — "this Role
+// grants this Permission." It intentionally carries no `tenantId`: tenant scope is inherited
+// transitively through `Role.tenantId`, since duplicating it here would have no independent
+// meaning to protect (unlike `AcademicSession.tenantId`, which serves a real query/RLS
+// performance need on a hot-path table — this table is low-volume by comparison). Grants are
+// hard-deleted on revoke, not soft-deleted: historical "who had what and when" belongs in a
+// future AuditLog, not in this table.
+model RolePermission {
+  id String @id @default(uuid()) @db.Uuid
+
+  roleId String @map("role_id") @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  permissionId String     @map("permission_id") @db.Uuid
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// UserProfile is the application-level profile for an authenticated user, synced 1:1 with
+// Supabase `auth.users` at the application layer. `id` is assigned to match `auth.users.id` at
+// creation time (via a Supabase Auth webhook/trigger) — it deliberately has no `@default(uuid())`
+// and is NOT a database foreign key into Supabase's own `auth` schema, since that schema is
+// Supabase-managed and not a stable contract for external foreign keys. `email` is a synced
+// cache of `auth.users.email` for query/display convenience only — not the source of truth.
+// `@unique` here is defense-in-depth: Supabase Auth already guarantees global email uniqueness
+// upstream, but a cached column should not rely solely on an external system's guarantee.
+model UserProfile {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  fullName  String  @map("full_name")
+  email     String? @unique
+  phone     String?
+  avatarUrl String? @map("avatar_url")
+
+  status      UserProfileStatus @default(INVITED)
+  lastLoginAt DateTime?         @map("last_login_at") @db.Timestamptz(3)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  userRoles UserRole[]
+
+  // Compound unique alongside the PK — required so UserRole can enforce, via a real foreign
+  // key, that its (tenantId, userId) pair always points to a UserProfile actually owned by
+  // that tenant (see UserRole.user below), mirroring the School/AcademicSession pattern.
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("user_profiles")
+}
+
+// UserRole is the sole assignment mechanism linking a UserProfile to one or more Roles — there
+// is no `roleId` column on UserProfile itself.
+//
+// Assignment strategy: exactly one row per user is enforced at the service layer today ("one
+// Role initially"); supporting multiple roles per user later is purely a relaxation of that
+// service-layer rule and requires no schema change — this table's shape does not change when
+// multi-role ships.
+//
+// `tenantId` is a composite FK against UserProfile(tenantId, id) — mirroring
+// AcademicSession -> School — so an assignment's tenant can never drift from the assignee's
+// own tenant. `roleId` stays a plain single-column FK to Role.id, deliberately NOT a composite
+// FK against Role(tenantId, id): Role.tenantId is nullable for System Roles, and Postgres's
+// default composite-FK matching does not enforce anything when a component is NULL, so a
+// composite FK here would silently fail to validate System Role assignments. The rule "a
+// Custom Role's tenantId must match this assignment's tenantId" is therefore a service-layer
+// check, not a database constraint — the same category of gap as AcademicSession.isCurrent
+// (see docs/DATABASE_STANDARDS.md).
+model UserRole {
+  id String @id @default(uuid()) @db.Uuid
+
+  tenantId String      @map("tenant_id") @db.Uuid
+  userId   String      @map("user_id") @db.Uuid
+  user     UserProfile @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  roleId String @map("role_id") @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  isPrimary Boolean @default(true) @map("is_primary")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@unique([userId, roleId])
+  @@index([tenantId, userId])
+  @@index([roleId])
+  @@map("user_roles")
 }
