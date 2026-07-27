@@ -13,6 +13,12 @@ export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
+    // Runs prisma/seed.ts via `prisma db seed` / after `prisma migrate reset`. Seeds System
+    // Roles, Permissions, and RolePermission grants only — never customer data (Tenant/School/
+    // UserProfile), per docs/DATABASE_STANDARDS.md §8 and Sprint 3 — Step 5 Part B. Cannot
+    // actually run yet: no migration has been applied, so there are no tables to seed against
+    // (see docs/PHASE_STATUS.md) — configured now so it's ready the moment one exists.
+    seed: "tsx prisma/seed.ts",
   },
   datasource: {
     url: env("DIRECT_URL"),

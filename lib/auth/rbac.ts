@@ -42,7 +42,13 @@ export interface AuthorizationContext extends AuthContext {
 const resolvePermissions = cache(async (tenantId: string, userId: string) => {
   const userRoles = await withTenantContext(tenantId, (tx) =>
     tx.userRole.findMany({
-      where: { userId, role: { deletedAt: null } },
+      // `tenantId` is included explicitly, not just relied on via the UserRole -> UserProfile
+      // composite FK (which already guarantees a given userId's rows all share one tenantId).
+      // Bug found during Sprint 3 — Step 5 review: every other tenant-scoped query in this
+      // codebase filters by tenantId explicitly, even when a FK makes it technically redundant
+      // (see prisma-user-profile.repository.ts's findByEmail for the same pattern) — this one
+      // didn't, breaking that defense-in-depth convention.
+      where: { userId, tenantId, role: { deletedAt: null } },
       select: {
         role: {
           select: {

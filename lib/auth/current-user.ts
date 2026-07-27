@@ -33,14 +33,37 @@ export const getCurrentUser = cache(async (): Promise<UserProfile | null> => {
   });
 });
 
-// Same resolution, but redirects to /login rather than returning null — for Server
-// Components/Actions that require a fully provisioned UserProfile to proceed. Redirects here
-// cover both "no session" and "session exists but its UserProfile hasn't been provisioned yet"
-// (e.g. the Supabase Auth sync webhook hasn't run) — both are treated the same at this layer.
+// Whether a UserProfile is currently allowed general application access. Exported so other
+// code (future user-management UI, admin-facing checks on a *different* user's profile) can
+// reuse the same rule rather than re-deriving it — this is the one, centralized definition.
+//
+// INVITED is deliberately excluded from "active" here: an invited user completing their own
+// onboarding does NOT go through requireCurrentUser()/this check — see acceptInvitation in
+// modules/users, which resolves the profile directly by auth user id, bypassing this gate on
+// purpose. Everywhere else, INVITED means "not yet allowed into the application."
+export function isUserProfileActive(userProfile: UserProfile): boolean {
+  return userProfile.status === "ACTIVE" && userProfile.deletedAt === null;
+}
+
+// Same resolution as getCurrentUser(), but redirects to /login rather than returning null/an
+// inactive profile — this is the SINGLE enforcement point the fix below relies on. Every other
+// helper in this codebase that needs "the current user" (getCurrentTenant, getCurrentSchool,
+// requireAuthContext, and therefore getAuthorizationContext/requirePermission/requireRole in
+// lib/auth/rbac.ts) calls this function rather than getCurrentUser() directly — so this one
+// check is what closes the gap for all of them, with no duplication elsewhere.
+//
+// Previously this only checked "does a UserProfile exist" — it did not verify `status`/
+// `deletedAt`, meaning a SUSPENDED, INACTIVE, or soft-deleted user with a still-valid Supabase
+// session could pass straight through. Fixed here: any UserProfile that is not ACTIVE (or is
+// soft-deleted) is treated identically to "not authenticated" for general application access.
+//
+// All non-ACTIVE states currently redirect to the same /login — there is no dedicated
+// "your account is suspended" or "complete your invitation" page yet (no UI built this sprint).
+// Differentiating that messaging per status is a future UX improvement, not a correctness gap.
 export async function requireCurrentUser(): Promise<UserProfile> {
   const userProfile = await getCurrentUser();
 
-  if (!userProfile) {
+  if (!userProfile || !isUserProfileActive(userProfile)) {
     redirect("/login");
   }
 
