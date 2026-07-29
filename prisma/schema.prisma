@@ -100,33 +100,47 @@ model Tenant {
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
-  school               School?
-  academicSessions     AcademicSession[]
-  roles                Role[]
-  userProfiles         UserProfile[]
-  classes              Class[]
-  sections             Section[]
-  students             Student[]
-  guardians            Guardian[]
-  enrollments          Enrollment[]
-  studentDocuments     StudentDocument[]
-  studentAttendances   StudentAttendance[]
-  teacherAttendances   TeacherAttendance[]
-  subjects             Subject[]
-  classrooms           Classroom[]
-  teachers             Teacher[]
-  workingDays          WorkingDay[]
-  holidays             Holiday[]
-  periodConfigurations PeriodConfiguration[]
-  teacherAssignments   TeacherAssignment[]
-  timetableEntries     TimetableEntry[]
-  examTypes            ExamType[]
-  exams                Exam[]
-  examSubjects         ExamSubject[]
-  marksEntries         MarksEntry[]
-  gradeScales          GradeScale[]
-  gradeBands           GradeBand[]
-  examResults          ExamResult[]
+  school                School?
+  academicSessions      AcademicSession[]
+  roles                 Role[]
+  userProfiles          UserProfile[]
+  classes               Class[]
+  sections              Section[]
+  students              Student[]
+  guardians             Guardian[]
+  enrollments           Enrollment[]
+  studentDocuments      StudentDocument[]
+  studentAttendances    StudentAttendance[]
+  teacherAttendances    TeacherAttendance[]
+  subjects              Subject[]
+  classrooms            Classroom[]
+  teachers              Teacher[]
+  workingDays           WorkingDay[]
+  holidays              Holiday[]
+  periodConfigurations  PeriodConfiguration[]
+  teacherAssignments    TeacherAssignment[]
+  timetableEntries      TimetableEntry[]
+  examTypes             ExamType[]
+  exams                 Exam[]
+  examSubjects          ExamSubject[]
+  marksEntries          MarksEntry[]
+  gradeScales           GradeScale[]
+  gradeBands            GradeBand[]
+  examResults           ExamResult[]
+  feeCategories         FeeCategory[]
+  feeStructures         FeeStructure[]
+  feeStructureItems     FeeStructureItem[]
+  studentFeeAssignments StudentFeeAssignment[]
+  installmentPlans      InstallmentPlan[]
+  installmentPlanItems  InstallmentPlanItem[]
+  fineRules             FineRule[]
+  feeConcessions        FeeConcession[]
+  feeInvoices           FeeInvoice[]
+  feePayments           FeePayment[]
+  feePaymentAllocations FeePaymentAllocation[]
+  feeNumberSequences    FeeNumberSequence[]
+  feeAuditLogs          FeeAuditLog[]
+  feeLedgerEntries      FeeLedgerEntry[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -169,6 +183,7 @@ model School {
   subjects         Subject[]
   classrooms       Classroom[]
   examTypes        ExamType[]
+  feeCategories    FeeCategory[]
 
   // Composite unique alongside the PK — required so AcademicSession can enforce, via a real
   // foreign key, that its (tenantId, schoolId) pair always points to a School actually owned
@@ -207,16 +222,25 @@ model AcademicSession {
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
-  classes              Class[]
-  enrollments          Enrollment[]
-  attendances          StudentAttendance[]
-  workingDays          WorkingDay[]
-  holidays             Holiday[]
-  periodConfigurations PeriodConfiguration[]
-  teacherAssignments   TeacherAssignment[]
-  timetableEntries     TimetableEntry[]
-  exams                Exam[]
-  gradeScales          GradeScale[]
+  classes               Class[]
+  enrollments           Enrollment[]
+  attendances           StudentAttendance[]
+  workingDays           WorkingDay[]
+  holidays              Holiday[]
+  periodConfigurations  PeriodConfiguration[]
+  teacherAssignments    TeacherAssignment[]
+  timetableEntries      TimetableEntry[]
+  exams                 Exam[]
+  gradeScales           GradeScale[]
+  feeStructures         FeeStructure[]
+  studentFeeAssignments StudentFeeAssignment[]
+  installmentPlans      InstallmentPlan[]
+  fineRules             FineRule[]
+  feeConcessions        FeeConcession[]
+  feeInvoices           FeeInvoice[]
+  feePayments           FeePayment[]
+  feeNumberSequences    FeeNumberSequence[]
+  feeLedgerEntries      FeeLedgerEntry[]
 
   // Added in Sprint 4 alongside @@unique([tenantId, sessionName]): a compound unique so
   // Class/Enrollment can reference AcademicSession via the same composite-FK pattern already
@@ -446,6 +470,8 @@ model Class {
   timetableEntries   TimetableEntry[]
   examSubjects       ExamSubject[]
   examResults        ExamResult[]
+  feeStructureItems  FeeStructureItem[]
+  feeInvoices        FeeInvoice[]
 
   // Compound unique alongside the PK — required so Section/Enrollment can enforce, via a real
   // foreign key, that their (tenantId, classId) pair always points to a Class actually owned by
@@ -572,12 +598,17 @@ model Student {
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
-  studentGuardians StudentGuardian[]
-  enrollments      Enrollment[]
-  documents        StudentDocument[]
-  attendances      StudentAttendance[]
-  marksEntries     MarksEntry[]
-  examResults      ExamResult[]
+  studentGuardians      StudentGuardian[]
+  enrollments           Enrollment[]
+  documents             StudentDocument[]
+  attendances           StudentAttendance[]
+  marksEntries          MarksEntry[]
+  examResults           ExamResult[]
+  studentFeeAssignments StudentFeeAssignment[]
+  feeConcessions        FeeConcession[]
+  feeInvoices           FeeInvoice[]
+  feePayments           FeePayment[]
+  feeLedgerEntries      FeeLedgerEntry[]
 
   // Compound unique alongside the PK — required so StudentGuardian/Enrollment can enforce, via
   // a real foreign key, that their (tenantId, studentId) pair always points to a Student
@@ -1408,4 +1439,619 @@ model ExamResult {
   @@unique([tenantId, examId, studentId])
   @@index([tenantId, examId, classId, sectionId])
   @@map("exam_results")
+}
+
+// --- Phase 8 — Fee Management & Billing (modules/fees) -------------------------------------
+//
+// Architecture review approved 2026-07-29. Key shape decisions, referenced by comments below:
+//   - FeeConcession unifies Discount/Scholarship/Concession/Waiver into one model (`type` +
+//     `valueType` distinguish them; a 100%-percentage concession IS a waiver structurally).
+//   - FeeInvoice is one row per (student, feeCategory, billingPeriod) — a single payable charge,
+//     never a bundled multi-line "bill." A printed monthly bill is a UI aggregation of several
+//     FeeInvoice rows sharing a billingPeriod, not a schema concept.
+//   - Fines are computed lazily (see modules/fees/application/compute-fine.helpers.ts) against
+//     FineRule + dueDate for any still-PENDING/PARTIALLY_PAID invoice — `fineAmount` below stays
+//     0 until a payment is actually collected against that invoice, at which point the service
+//     snapshots the fine charged at that moment. No background job computes/materializes fines.
+//   - FeePayment IS the immutable receipt (no separate FeeReceipt model) — once `status =
+//     COMPLETED`, no field is written again except the reversal fields, mirroring
+//     Enrollment.close()'s "one allowed status-flip mutation" shape.
+//   - FeeNumberSequence gives Invoice and Receipt numbering independent, per-tenant-per-session,
+//     configurable-prefix counters, atomically incremented inside the same transaction as the
+//     row they number (see PrismaFeeNumberSequenceRepository.nextNumber).
+//   - Financial records are never hard-deleted: FeeInvoice/FeePayment carry a status enum
+//     (CANCELLED/REVERSED) instead of `deletedAt` — same "status-flip, not edit" precedent as
+//     Enrollment/TeacherAssignment.
+//   - FeeLedgerEntry is a pure append-only ledger — its repository exposes only `create`/reads,
+//     never an update or delete method, making "never rewrite ledger history" structurally hard
+//     to violate rather than merely documented (same discipline as EnrollmentRepository's
+//     create/close-only interface).
+//   - FeeAuditLog is Fee-module-scoped, not a platform-wide retrofit of every module built in
+//     Phases 0-7 (docs/SECURITY_GUIDELINES.md §7's blanket requirement is a pre-existing gap
+//     flagged in the Phase 8 architecture review, not solved wholesale here).
+//   - Hostel/Transport fees are billing-only: plain FeeCategory rows flowing through the same
+//     FeeStructureItem/FeeInvoice pipeline as tuition — no room/route allocation models.
+//   - Payment-gateway fields on FeePayment are nullable and unused this phase — reserved only,
+//     mirroring GradeBand.gradePoint's "reserved for a future phase" precedent.
+
+enum FeeFrequency {
+  ONE_TIME
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  ANNUAL
+  INSTALLMENT
+}
+
+enum FeeInvoiceStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  WAIVED
+}
+
+enum FeePaymentMode {
+  CASH
+  CHEQUE
+  UPI
+  CARD
+  BANK_TRANSFER
+  ONLINE
+}
+
+enum FeePaymentStatus {
+  COMPLETED
+  REVERSED
+  CANCELLED
+}
+
+enum FeeConcessionType {
+  DISCOUNT
+  SCHOLARSHIP
+  CONCESSION
+  WAIVER
+  SIBLING
+  STAFF_WARD
+  OTHER
+}
+
+enum FeeConcessionValueType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum FineType {
+  FLAT
+  PERCENTAGE
+  PER_DAY
+}
+
+enum FeeNumberSequenceType {
+  INVOICE
+  RECEIPT
+}
+
+enum FeeLedgerEntryType {
+  INVOICE
+  PAYMENT
+  CONCESSION
+  REVERSAL
+  CANCELLATION
+  FINE
+}
+
+// Tenant-wide master data (Tuition, Transport, Hostel, Admission, Exam Fee, ID Card...) — reused
+// across academic sessions, same scoping as Subject/Classroom. `isRecurring` distinguishes
+// monthly-billed categories from one-time fees (admission, registration, ID card) without a
+// separate model: a one-time fee is just a FeeCategory with isRecurring=false, billed through a
+// FeeStructureItem with frequency=ONE_TIME. `hsnSacCode`/`taxRatePercent` are reserved for future
+// GST support — nullable, unused by any service this phase.
+model FeeCategory {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name        String
+  code        String
+  isRecurring Boolean @default(false) @map("is_recurring")
+
+  hsnSacCode     String? @map("hsn_sac_code")
+  taxRatePercent Float?  @map("tax_rate_percent")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  structureItems FeeStructureItem[]
+  fineRules      FineRule[]
+  concessions    FeeConcession[]
+  invoices       FeeInvoice[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("fee_categories")
+}
+
+// A named, session-scoped fee policy container (mirrors GradeScale) — e.g. "2026-27 Standard Fee
+// Structure". Its FeeStructureItem rows carry the actual class-wise amounts.
+model FeeStructure {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String @default("Default")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  items                 FeeStructureItem[]
+  studentFeeAssignments StudentFeeAssignment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, academicSessionId, name])
+  @@index([tenantId, academicSessionId])
+  @@map("fee_structures")
+}
+
+// The class-wise amount for one fee category within a FeeStructure — `classId` is always set
+// (never a nullable "applies to all classes" wildcard, mirroring ExamSubject's own class-scoped,
+// not-nullable precedent) so a whole-school fee is applied by creating one row per class, not by
+// a schema-level wildcard that would complicate uniqueness (Postgres treats NULL as distinct in a
+// unique index, which would silently allow duplicate whole-school rows).
+model FeeStructureItem {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  feeStructureId String       @map("fee_structure_id") @db.Uuid
+  feeStructure   FeeStructure @relation(fields: [tenantId, feeStructureId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  classId String @map("class_id") @db.Uuid
+  class   Class  @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  feeCategoryId String      @map("fee_category_id") @db.Uuid
+  feeCategory   FeeCategory @relation(fields: [tenantId, feeCategoryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  amount        Decimal      @db.Decimal(12, 2)
+  frequency     FeeFrequency
+  dueDayOfMonth Int?         @map("due_day_of_month")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  invoices FeeInvoice[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, feeStructureId, classId, feeCategoryId])
+  @@index([tenantId, feeStructureId])
+  @@index([tenantId, classId])
+  @@map("fee_structure_items")
+}
+
+// Binds a Student to a FeeStructure (+ optional InstallmentPlan) for a session — normally
+// derived from the student's class, but stored explicitly so a later edit to FeeStructure does
+// not retroactively change what a student was actually billed under. One row per student per
+// session (isActive toggle for reassignment, never a new row — same upsert-style shape as
+// TeacherAssignment, since fee assignment history isn't a stated requirement the way Enrollment's
+// class history is).
+model StudentFeeAssignment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  feeStructureId String       @map("fee_structure_id") @db.Uuid
+  feeStructure   FeeStructure @relation(fields: [tenantId, feeStructureId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  installmentPlanId String?          @map("installment_plan_id") @db.Uuid
+  installmentPlan   InstallmentPlan? @relation(fields: [tenantId, installmentPlanId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, studentId, academicSessionId])
+  @@index([tenantId, feeStructureId])
+  @@index([tenantId, installmentPlanId])
+  @@map("student_fee_assignments")
+}
+
+// A named installment schedule (e.g. "Quarterly") a StudentFeeAssignment can opt into for
+// FeeStructureItems whose frequency is INSTALLMENT. `dueDayOffset` is days from the
+// AcademicSession's own startDate — installment due dates are computed at generation time, not
+// hand-entered per student.
+model InstallmentPlan {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  items                 InstallmentPlanItem[]
+  studentFeeAssignments StudentFeeAssignment[]
+  invoices              FeeInvoice[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, academicSessionId, name])
+  @@index([tenantId, academicSessionId])
+  @@map("installment_plans")
+}
+
+model InstallmentPlanItem {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  installmentPlanId String          @map("installment_plan_id") @db.Uuid
+  installmentPlan   InstallmentPlan @relation(fields: [tenantId, installmentPlanId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  installmentNumber Int     @map("installment_number")
+  percentageOfTotal Decimal @map("percentage_of_total") @db.Decimal(5, 2)
+  dueDayOffset      Int     @map("due_day_offset")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, installmentPlanId, installmentNumber])
+  @@index([tenantId, installmentPlanId])
+  @@map("installment_plan_items")
+}
+
+// A late-payment fine policy. `feeCategoryId` nullable = applies to every category; set = scoped
+// to one category only. Purely declarative data — computation is a pure helper
+// (compute-fine.helpers.ts), validated the same way grade-band-validation.helpers.ts validates
+// GradeBand: no schema-level enforcement of internal consistency beyond the FK/index shape here.
+model FineRule {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  feeCategoryId String?      @map("fee_category_id") @db.Uuid
+  feeCategory   FeeCategory? @relation(fields: [tenantId, feeCategoryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name            String
+  gracePeriodDays Int      @map("grace_period_days")
+  fineType        FineType @map("fine_type")
+  fineValue       Decimal  @map("fine_value") @db.Decimal(12, 2)
+  maxFineAmount   Decimal? @map("max_fine_amount") @db.Decimal(12, 2)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, academicSessionId])
+  @@index([tenantId, feeCategoryId])
+  @@map("fine_rules")
+}
+
+// Unifies Discount, Scholarship, Concession, and Waiver (Phase 8 Decision 2) — a standing grant
+// for one student, consulted by invoice generation to compute `FeeInvoice.discountAmount` at
+// generation time (snapshotted onto the invoice, not a live join on every read). `type`
+// distinguishes the reason (for reporting); `valueType`/`value` carry the actual mechanics — a
+// full waiver is simply `valueType=PERCENTAGE, value=100`, not a separate code path.
+// `feeCategoryId` nullable = applies to every category the student is billed for this session.
+model FeeConcession {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  feeCategoryId String?      @map("fee_category_id") @db.Uuid
+  feeCategory   FeeCategory? @relation(fields: [tenantId, feeCategoryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  type      FeeConcessionType      @map("type")
+  valueType FeeConcessionValueType @map("value_type")
+  value     Decimal                @db.Decimal(12, 2)
+  reason    String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  invoices FeeInvoice[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, studentId])
+  @@index([tenantId, academicSessionId])
+  @@index([tenantId, feeCategoryId])
+  @@map("fee_concessions")
+}
+
+// Independent, configurable-prefix counters for Invoice and Receipt numbers (Phase 8 requirement
+// 9) — one row per (tenantId, academicSessionId, type). `lastNumber` is incremented via a single
+// `UPDATE ... RETURNING` inside the same transaction as the row it numbers
+// (PrismaFeeNumberSequenceRepository.nextNumber); Postgres's row-level lock on that UPDATE
+// serializes concurrent cashiers without a separate advisory lock. No `deletedAt` — this is pure
+// counter state, not a business record a school "recovers."
+model FeeNumberSequence {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  type       FeeNumberSequenceType
+  prefix     String                @default("")
+  lastNumber Int                   @default(0) @map("last_number")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, academicSessionId, type])
+  @@map("fee_number_sequences")
+}
+
+// The atomic payable charge: one row per (student, feeCategory, billingPeriod) — Phase 8
+// Decision 3. `billingPeriod` is a plain string ("2026-04" for a monthly charge, or an
+// installment/one-time label) rather than a Date, since one-time fees have no natural month.
+// `fineAmount` stays 0 until a payment is actually collected against this invoice (Decision 4 —
+// see compute-fine.helpers.ts for the live computation used everywhere else). No `deletedAt` —
+// never hard-deleted; `status=CANCELLED` instead (Decision 10), mirroring Enrollment's
+// status-flip-not-edit shape. `amountPaid` is only ever updated transactionally alongside a
+// FeePaymentAllocation insert, never edited directly.
+model FeeInvoice {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  classId String @map("class_id") @db.Uuid
+  class   Class  @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  feeCategoryId String      @map("fee_category_id") @db.Uuid
+  feeCategory   FeeCategory @relation(fields: [tenantId, feeCategoryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  feeStructureItemId String           @map("fee_structure_item_id") @db.Uuid
+  feeStructureItem   FeeStructureItem @relation(fields: [tenantId, feeStructureItemId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  installmentPlanId String?          @map("installment_plan_id") @db.Uuid
+  installmentPlan   InstallmentPlan? @relation(fields: [tenantId, installmentPlanId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+  installmentNumber Int?             @map("installment_number")
+
+  appliedConcessionId String?        @map("applied_concession_id") @db.Uuid
+  appliedConcession   FeeConcession? @relation(fields: [tenantId, appliedConcessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  invoiceNumber String @map("invoice_number")
+  billingPeriod String @map("billing_period")
+
+  amount         Decimal  @db.Decimal(12, 2)
+  discountAmount Decimal  @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  fineAmount     Decimal  @default(0) @map("fine_amount") @db.Decimal(12, 2)
+  amountPaid     Decimal  @default(0) @map("amount_paid") @db.Decimal(12, 2)
+  taxAmount      Decimal? @map("tax_amount") @db.Decimal(12, 2)
+
+  dueDate DateTime         @map("due_date") @db.Date
+  status  FeeInvoiceStatus @default(PENDING)
+
+  cancelledAt        DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelledBy        String?   @map("cancelled_by") @db.Uuid
+  cancellationReason String?   @map("cancellation_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  allocations FeePaymentAllocation[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, invoiceNumber])
+  @@unique([tenantId, studentId, feeStructureItemId, billingPeriod])
+  @@index([tenantId, studentId])
+  @@index([tenantId, classId, status])
+  @@index([tenantId, academicSessionId, status])
+  @@index([tenantId, dueDate])
+  @@map("fee_invoices")
+}
+
+// A single cash-collection event — this row IS the immutable receipt (Phase 8 Decision 5), never
+// a separate FeeReceipt model. `receiptNumber` is generated once via FeeNumberSequence and never
+// changes. `clientRequestId` is a UI-generated idempotency key (`@@unique` below) preventing a
+// double-click/retry from creating a duplicate payment. Once `status=COMPLETED`, no field is
+// written again except the reversal fields (`reversedAt`/`reversedBy`/`reversalReason`) —
+// reversing a payment is a status flip, never a value edit or delete (Decision 10). Gateway
+// fields are nullable and unused this phase — reserved for a future online-payment integration
+// (Phase 8 requirement 8) without a later schema redesign.
+model FeePayment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  receiptNumber   String @map("receipt_number")
+  clientRequestId String @map("client_request_id")
+
+  amount      Decimal          @db.Decimal(12, 2)
+  paymentMode FeePaymentMode   @map("payment_mode")
+  status      FeePaymentStatus @default(COMPLETED)
+
+  paidAt      DateTime @default(now()) @map("paid_at") @db.Timestamptz(3)
+  collectedBy String?  @map("collected_by") @db.Uuid
+
+  remarks String?
+
+  gatewayProvider      String? @map("gateway_provider")
+  gatewayTransactionId String? @map("gateway_transaction_id")
+  gatewayOrderId       String? @map("gateway_order_id")
+  gatewayPayload       Json?   @map("gateway_payload")
+
+  reversedAt     DateTime? @map("reversed_at") @db.Timestamptz(3)
+  reversedBy     String?   @map("reversed_by") @db.Uuid
+  reversalReason String?   @map("reversal_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  allocations FeePaymentAllocation[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, receiptNumber])
+  @@unique([tenantId, clientRequestId])
+  @@index([tenantId, studentId])
+  @@index([tenantId, academicSessionId, paidAt])
+  @@index([tenantId, collectedBy, paidAt])
+  @@map("fee_payments")
+}
+
+// How one FeePayment settles across one or more FeeInvoices — what makes partial payments and
+// "pay several dues in one collection" structurally correct (Phase 8 requirement 13).
+model FeePaymentAllocation {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  paymentId String     @map("payment_id") @db.Uuid
+  payment   FeePayment @relation(fields: [tenantId, paymentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  invoiceId String     @map("invoice_id") @db.Uuid
+  invoice   FeeInvoice @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  amountAllocated Decimal @map("amount_allocated") @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, paymentId, invoiceId])
+  @@index([tenantId, invoiceId])
+  @@map("fee_payment_allocations")
+}
+
+// Fee-module-scoped audit trail (Phase 8 Decision 6) — written by every mutating fee service
+// (generate invoice, collect payment, reverse payment, apply concession, cancel invoice). Not a
+// platform-wide AuditLog retrofitted across every module built in Phases 0-7; see this section's
+// header comment.
+model FeeAuditLog {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  actorId    String? @map("actor_id") @db.Uuid
+  action     String
+  entityType String  @map("entity_type")
+  entityId   String  @map("entity_id") @db.Uuid
+
+  beforeState Json? @map("before_state")
+  afterState  Json? @map("after_state")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, createdAt])
+  @@map("fee_audit_logs")
+}
+
+// A pure, append-only running ledger per student (Phase 8 Decision 11 — "Make Student Ledger
+// append-only"). Every fee-affecting event (invoice generated, payment collected, concession
+// applied, payment reversed, invoice cancelled) writes exactly one row here and it is never
+// edited or deleted afterward — the repository interface for this model exposes only `create`
+// and read methods, no update/delete, the same structural discipline as
+// EnrollmentRepository's create/close-only shape. `balanceAfter` is computed by the writing
+// service at insert time (running total), not recomputed on read.
+model FeeLedgerEntry {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  entryType     FeeLedgerEntryType @map("entry_type")
+  referenceType String             @map("reference_type")
+  referenceId   String             @map("reference_id") @db.Uuid
+
+  debit        Decimal @default(0) @db.Decimal(12, 2)
+  credit       Decimal @default(0) @db.Decimal(12, 2)
+  balanceAfter Decimal @map("balance_after") @db.Decimal(12, 2)
+
+  description String
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, studentId, createdAt])
+  @@index([tenantId, academicSessionId])
+  @@map("fee_ledger_entries")
 }

@@ -1,0 +1,57 @@
+/* Screen: only the A4 area is visible — the thermal area exists in the DOM (for its own ref-free
+   print pass) but stays hidden until printing is explicitly switched to thermal. */
+@media screen {
+  #receipt-thermal-print-area {
+    display: none;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .receipt-screen-only {
+    display: none !important;
+  }
+
+  #receipt-a4-print-area,
+  #receipt-a4-print-area * {
+    visibility: visible;
+  }
+  #receipt-a4-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    page: a4-receipt;
+  }
+
+  /* `document.documentElement.dataset.printMode = "thermal"` (set synchronously by
+     ReceiptPrintControls right before window.print()) swaps which area is shown, targeting the
+     narrower named @page below instead of A4. */
+  html[data-print-mode="thermal"] #receipt-a4-print-area {
+    display: none !important;
+  }
+  html[data-print-mode="thermal"] #receipt-thermal-print-area,
+  html[data-print-mode="thermal"] #receipt-thermal-print-area * {
+    visibility: visible;
+  }
+  html[data-print-mode="thermal"] #receipt-thermal-print-area {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    page: thermal-receipt;
+  }
+
+  @page a4-receipt {
+    size: A4;
+    margin: 12mm;
+  }
+
+  @page thermal-receipt {
+    size: 80mm auto;
+    margin: 4mm;
+  }
+}

@@ -21,6 +21,10 @@ const SYSTEM_ROLES = [
   { code: "LIBRARIAN", name: "Librarian", isProtected: false },
   { code: "PARENT", name: "Parent", isProtected: false },
   { code: "STUDENT", name: "Student", isProtected: false },
+  // Phase 8 — front-desk cash collection only (fee.payment.collect + fee.receipt.print), a
+  // narrower role than ACCOUNTANT (structures/concessions/reversals/reports). No existing role
+  // fit this scope: RECEPTIONIST is front-office but not fee-specific, ACCOUNTANT is broader.
+  { code: "CASHIER", name: "Cashier", isProtected: false },
 ] as const;
 
 // Only Super Admin and School Admin hold the base admin permission set — every other system
@@ -30,10 +34,10 @@ const ADMIN_ROLE_CODES = ["SUPER_ADMIN", "SCHOOL_ADMIN"] as const;
 // The 9 permission codes actually referenced by working code in this codebase (modules/users'
 // application services and app/settings/users/actions.ts), the 3 Sprint 4.8A document-management
 // codes, the 2 Sprint 4.9 ID card codes, the 4 Phase 5 attendance codes, the 11 Phase 6
-// timetable-management codes, and — as of Phase 7 — the 15 examination-management codes. Every
-// code here still follows the file's original principle (only seed what real code references,
-// or what a task explicitly asks to seed ahead of its code — see Sprint 4.8A's own comment
-// history for that exception).
+// timetable-management codes, the 15 Phase 7 examination-management codes, and — as of Phase 8 —
+// the 20 fee-management-and-billing codes. Every code here still follows the file's original
+// principle (only seed what real code references, or what a task explicitly asks to seed ahead of
+// its code — see Sprint 4.8A's own comment history for that exception).
 //
 // Each entry now carries its own `roles` list rather than every permission going to the same
 // ADMIN_ROLE_CODES set — needed as of Sprint 4.9, whose 3-tier access model
@@ -288,6 +292,142 @@ const PERMISSIONS = [
     code: "student.promote",
     resource: "student",
     action: "promote",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
+  },
+  // Phase 8 — Fee Management & Billing. Matches the approved architecture review's permission
+  // matrix. CASHIER is deliberately the narrowest role here (collect + print only) — structure/
+  // concession/reversal/report authority stays with ACCOUNTANT and above, per Decision 1's own
+  // reasoning for adding a dedicated role rather than overloading RECEPTIONIST/ACCOUNTANT.
+  {
+    code: "feecategory.manage",
+    resource: "feecategory",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "feecategory.view",
+    resource: "feecategory",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL", "CASHIER"] as const,
+  },
+  {
+    code: "feestructure.manage",
+    resource: "feestructure",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "feestructure.view",
+    resource: "feestructure",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL"] as const,
+  },
+  {
+    code: "feeassignment.manage",
+    resource: "feeassignment",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "feeassignment.view",
+    resource: "feeassignment",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL"] as const,
+  },
+  {
+    code: "fee.finerule.manage",
+    resource: "fee.finerule",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "fee.installmentplan.manage",
+    resource: "fee.installmentplan",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "fee.generate",
+    resource: "fee",
+    action: "generate",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "fee.invoice.view",
+    resource: "fee.invoice",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL", "CASHIER"] as const,
+  },
+  {
+    code: "fee.invoice.cancel",
+    resource: "fee.invoice",
+    action: "cancel",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "fee.payment.collect",
+    resource: "fee.payment",
+    action: "collect",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "CASHIER"] as const,
+  },
+  {
+    code: "fee.payment.view",
+    resource: "fee.payment",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL", "CASHIER"] as const,
+  },
+  {
+    code: "fee.payment.reverse",
+    resource: "fee.payment",
+    action: "reverse",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "fee.receipt.print",
+    resource: "fee.receipt",
+    action: "print",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "CASHIER"] as const,
+  },
+  {
+    code: "fee.concession.manage",
+    resource: "fee.concession",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL"] as const,
+  },
+  {
+    code: "fee.concession.view",
+    resource: "fee.concession",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL"] as const,
+  },
+  {
+    code: "fee.ledger.view",
+    resource: "fee.ledger",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL"] as const,
+  },
+  {
+    code: "fee.report.daily.view",
+    resource: "fee.report.daily",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL", "CASHIER"] as const,
+  },
+  {
+    code: "fee.report.outstanding.view",
+    resource: "fee.report.outstanding",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL"] as const,
+  },
+  {
+    code: "fee.report.classcollection.view",
+    resource: "fee.report.classcollection",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL"] as const,
+  },
+  {
+    code: "fee.auditlog.view",
+    resource: "fee.auditlog",
+    action: "view",
     roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
   },
 ] as const;
