@@ -29,6 +29,11 @@ export class PrismaRoleRepository implements RoleRepository {
     return row ? toEntity(row) : null;
   }
 
+  async findByCode(code: string): Promise<RoleEntity | null> {
+    const row = await prisma.role.findUnique({ where: { code } });
+    return row ? toEntity(row) : null;
+  }
+
   async findAvailableForTenant(tenantId: string): Promise<RoleEntity[]> {
     const rows = await prisma.role.findMany({
       where: { deletedAt: null, OR: [{ tenantId: null }, { tenantId }] },

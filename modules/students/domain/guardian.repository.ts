@@ -42,6 +42,10 @@ export interface GuardianRepository {
     contact: { phone?: string; email?: string }
   ): Promise<GuardianEntity | null>;
 
+  // Phase 9 — resolves "which Guardian is this signed-in parent" from their UserProfile id. The
+  // entry point every parent-facing service starts from.
+  findByUserProfileId(tenantId: string, userProfileId: string): Promise<GuardianEntity | null>;
+
   findMany(tenantId: string, filter: GuardianListFilter): Promise<GuardianListResult>;
 
   // `tx` (Sprint 4 — Step 4): optional. Omitted, this opens its own transaction exactly as
@@ -61,4 +65,16 @@ export interface GuardianRepository {
   ): Promise<GuardianEntity>;
   softDelete(tenantId: string, id: string, deletedBy: string | null): Promise<GuardianEntity>;
   restore(tenantId: string, id: string, updatedBy: string | null): Promise<GuardianEntity>;
+
+  // Phase 9 — the one allowed mutation for linking a Parent Account: sets `userProfileId` on an
+  // existing Guardian row. `tx` optional, same Sprint 4 — Step 4 additive pattern as every other
+  // repository — needed by link-guardian-account.service.ts, which creates the UserProfile,
+  // assigns the PARENT role, and links the Guardian atomically.
+  linkToUserProfile(
+    tenantId: string,
+    id: string,
+    userProfileId: string,
+    updatedBy: string | null,
+    tx?: Prisma.TransactionClient
+  ): Promise<GuardianEntity>;
 }

@@ -18,6 +18,7 @@ function toEntity(row: PrismaGuardian): GuardianEntity {
     phone: row.phone,
     email: row.email,
     occupation: row.occupation,
+    userProfileId: row.userProfileId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -53,6 +54,13 @@ export class PrismaGuardianRepository implements GuardianRepository {
           ],
         },
       })
+    );
+    return row ? toEntity(row) : null;
+  }
+
+  async findByUserProfileId(tenantId: string, userProfileId: string): Promise<GuardianEntity | null> {
+    const row = await withTenantContext(tenantId, (tx) =>
+      tx.guardian.findUnique({ where: { tenantId_userProfileId: { tenantId, userProfileId } } })
     );
     return row ? toEntity(row) : null;
   }
@@ -145,6 +153,25 @@ export class PrismaGuardianRepository implements GuardianRepository {
         where: { tenantId_id: { tenantId, id } },
         data: { deletedAt: null, updatedBy },
       })
+    );
+    return toEntity(row);
+  }
+
+  async linkToUserProfile(
+    tenantId: string,
+    id: string,
+    userProfileId: string,
+    updatedBy: string | null,
+    tx?: Prisma.TransactionClient
+  ): Promise<GuardianEntity> {
+    const row = await withTenantContext(
+      tenantId,
+      (client) =>
+        client.guardian.update({
+          where: { tenantId_id: { tenantId, id } },
+          data: { userProfileId, updatedBy },
+        }),
+      tx
     );
     return toEntity(row);
   }

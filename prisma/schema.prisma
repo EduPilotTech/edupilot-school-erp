@@ -100,47 +100,56 @@ model Tenant {
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
-  school                School?
-  academicSessions      AcademicSession[]
-  roles                 Role[]
-  userProfiles          UserProfile[]
-  classes               Class[]
-  sections              Section[]
-  students              Student[]
-  guardians             Guardian[]
-  enrollments           Enrollment[]
-  studentDocuments      StudentDocument[]
-  studentAttendances    StudentAttendance[]
-  teacherAttendances    TeacherAttendance[]
-  subjects              Subject[]
-  classrooms            Classroom[]
-  teachers              Teacher[]
-  workingDays           WorkingDay[]
-  holidays              Holiday[]
-  periodConfigurations  PeriodConfiguration[]
-  teacherAssignments    TeacherAssignment[]
-  timetableEntries      TimetableEntry[]
-  examTypes             ExamType[]
-  exams                 Exam[]
-  examSubjects          ExamSubject[]
-  marksEntries          MarksEntry[]
-  gradeScales           GradeScale[]
-  gradeBands            GradeBand[]
-  examResults           ExamResult[]
-  feeCategories         FeeCategory[]
-  feeStructures         FeeStructure[]
-  feeStructureItems     FeeStructureItem[]
-  studentFeeAssignments StudentFeeAssignment[]
-  installmentPlans      InstallmentPlan[]
-  installmentPlanItems  InstallmentPlanItem[]
-  fineRules             FineRule[]
-  feeConcessions        FeeConcession[]
-  feeInvoices           FeeInvoice[]
-  feePayments           FeePayment[]
-  feePaymentAllocations FeePaymentAllocation[]
-  feeNumberSequences    FeeNumberSequence[]
-  feeAuditLogs          FeeAuditLog[]
-  feeLedgerEntries      FeeLedgerEntry[]
+  school                 School?
+  academicSessions       AcademicSession[]
+  roles                  Role[]
+  userProfiles           UserProfile[]
+  classes                Class[]
+  sections               Section[]
+  students               Student[]
+  guardians              Guardian[]
+  enrollments            Enrollment[]
+  studentDocuments       StudentDocument[]
+  studentAttendances     StudentAttendance[]
+  teacherAttendances     TeacherAttendance[]
+  subjects               Subject[]
+  classrooms             Classroom[]
+  teachers               Teacher[]
+  workingDays            WorkingDay[]
+  holidays               Holiday[]
+  periodConfigurations   PeriodConfiguration[]
+  teacherAssignments     TeacherAssignment[]
+  timetableEntries       TimetableEntry[]
+  examTypes              ExamType[]
+  exams                  Exam[]
+  examSubjects           ExamSubject[]
+  marksEntries           MarksEntry[]
+  gradeScales            GradeScale[]
+  gradeBands             GradeBand[]
+  examResults            ExamResult[]
+  feeCategories          FeeCategory[]
+  feeStructures          FeeStructure[]
+  feeStructureItems      FeeStructureItem[]
+  studentFeeAssignments  StudentFeeAssignment[]
+  installmentPlans       InstallmentPlan[]
+  installmentPlanItems   InstallmentPlanItem[]
+  fineRules              FineRule[]
+  feeConcessions         FeeConcession[]
+  feeInvoices            FeeInvoice[]
+  feePayments            FeePayment[]
+  feePaymentAllocations  FeePaymentAllocation[]
+  feeNumberSequences     FeeNumberSequence[]
+  feeAuditLogs           FeeAuditLog[]
+  feeLedgerEntries       FeeLedgerEntry[]
+  parentActivityLogs     ParentActivityLog[]
+  homework               Homework[]
+  homeworkStatuses       HomeworkStatus[]
+  notices                Notice[]
+  calendarEvents         CalendarEvent[]
+  messageThreads         MessageThread[]
+  messages               Message[]
+  notifications          Notification[]
+  notificationDeliveries NotificationDelivery[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -241,6 +250,9 @@ model AcademicSession {
   feePayments           FeePayment[]
   feeNumberSequences    FeeNumberSequence[]
   feeLedgerEntries      FeeLedgerEntry[]
+  homework              Homework[]
+  notices               Notice[]
+  calendarEvents        CalendarEvent[]
 
   // Added in Sprint 4 alongside @@unique([tenantId, sessionName]): a compound unique so
   // Class/Enrollment can reference AcademicSession via the same composite-FK pattern already
@@ -387,6 +399,10 @@ model UserProfile {
   userRoles          UserRole[]
   teacherAttendances TeacherAttendance[]
   teacher            Teacher?
+  guardian           Guardian?
+  parentActivityLogs ParentActivityLog[]
+  messages           Message[]
+  notifications      Notification[]
 
   // Compound unique alongside the PK — required so UserRole can enforce, via a real foreign
   // key, that its (tenantId, userId) pair always points to a UserProfile actually owned by
@@ -472,6 +488,8 @@ model Class {
   examResults        ExamResult[]
   feeStructureItems  FeeStructureItem[]
   feeInvoices        FeeInvoice[]
+  homework           Homework[]
+  notices            Notice[]
 
   // Compound unique alongside the PK — required so Section/Enrollment can enforce, via a real
   // foreign key, that their (tenantId, classId) pair always points to a Class actually owned by
@@ -508,6 +526,8 @@ model Section {
   teacherAssignments TeacherAssignment[]
   timetableEntries   TimetableEntry[]
   examResults        ExamResult[]
+  homework           Homework[]
+  notices            Notice[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, classId, name])
@@ -609,6 +629,8 @@ model Student {
   feeInvoices           FeeInvoice[]
   feePayments           FeePayment[]
   feeLedgerEntries      FeeLedgerEntry[]
+  homeworkStatuses      HomeworkStatus[]
+  messageThreads        MessageThread[]
 
   // Compound unique alongside the PK — required so StudentGuardian/Enrollment can enforce, via
   // a real foreign key, that their (tenantId, studentId) pair always points to a Student
@@ -620,8 +642,14 @@ model Student {
   @@map("students")
 }
 
-// A Guardian is a parent/guardian contact record — independent of UserProfile for the same
-// reason as Student (parent-portal access is deferred, not built this sprint).
+// A Guardian is a parent/guardian contact record — independent of UserProfile at its core (a
+// Guardian can exist purely as a contact record with no portal access, same reasoning as
+// Student). `userProfileId` (Phase 9 Decision 1) is the additive, nullable Parent Account link —
+// most Guardians never get one; when set, it's how a signed-in UserProfile resolves "which
+// students can I see" via the existing StudentGuardian join (Phase 9 Decision 2: no new mapping
+// table — StudentGuardian already supports one guardian linked to many students). Mirrors
+// Teacher.userProfileId's exact precedent from Phase 6, including the `@@unique` on the FK
+// column (a UserProfile is linked to at most one Guardian).
 model Guardian {
   id       String @id @default(uuid()) @db.Uuid
   tenantId String @map("tenant_id") @db.Uuid
@@ -632,15 +660,21 @@ model Guardian {
   email      String?
   occupation String?
 
+  userProfileId String?      @unique @map("user_profile_id") @db.Uuid
+  userProfile   UserProfile? @relation(fields: [tenantId, userProfileId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
-  studentGuardians StudentGuardian[]
+  studentGuardians   StudentGuardian[]
+  parentActivityLogs ParentActivityLog[]
+  messageThreads     MessageThread[]
 
   @@unique([tenantId, id])
+  @@unique([tenantId, userProfileId])
   @@index([tenantId])
   @@index([tenantId, phone])
   @@index([tenantId, email])
@@ -863,6 +897,7 @@ model Subject {
   teacherAssignments TeacherAssignment[]
   timetableEntries   TimetableEntry[]
   examSubjects       ExamSubject[]
+  homework           Homework[]
 
   // Compound unique alongside the PK — same composite-FK-target pattern as every other master
   // entity in this schema (School, AcademicSession, Class, Section) — required so
@@ -935,6 +970,8 @@ model Teacher {
 
   assignments      TeacherAssignment[]
   timetableEntries TimetableEntry[]
+  homework         Homework[]
+  messageThreads   MessageThread[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, userProfileId])
@@ -2054,4 +2091,374 @@ model FeeLedgerEntry {
   @@index([tenantId, studentId, createdAt])
   @@index([tenantId, academicSessionId])
   @@map("fee_ledger_entries")
+}
+
+// --- Phase 9 — Parent Portal & Communication (modules/parents, modules/communication) ------
+//
+// Architecture review approved. Key shape decisions:
+//   - Parent Account is `Guardian.userProfileId` (added above, on the Guardian model itself) —
+//     not a new join table. Parent <-> Student Mapping and multi-child support both fall out of
+//     the existing StudentGuardian join for free.
+//   - modules/parents (account linking, guardian-access authorization, activity log/messaging
+//     audit, dashboard composition) stays separate from modules/communication (Homework, Notice,
+//     Calendar, Messaging, Notifications) — a distinct bounded context, not "about parents."
+//   - ParentActivityLog unifies portal activity tracking AND the messaging audit-log requirement
+//     (one table, `action` values cover both) rather than two near-duplicate tables.
+//   - Notice is both the Notice Board and Broadcast Messages — a broadcast is a Notice whose
+//     publish triggers immediate Notification dispatch, not a separate model.
+//   - Calendar is composed at read time from the existing Holiday model (Phase 6) UNIONed with
+//     new CalendarEvent rows — holidays are never duplicated into CalendarEvent.
+//   - Notification (channel-agnostic fact, carries `readAt` and `priority`) is deliberately
+//     separate from NotificationDelivery (per-channel dispatch attempt) — this is the entire
+//     answer to "support Email/WhatsApp/Push/SMS in future without redesign": adding a channel
+//     later is a new enum value + a new NotificationSender implementation, never a migration.
+//     Only IN_APP is actually dispatched this phase.
+//   - Homework is view-only (Decision 3) — HomeworkStatus is teacher-set, parent-read-only, no
+//     student file-upload submission workflow.
+
+enum HomeworkStatusValue {
+  PENDING
+  SUBMITTED
+  COMPLETED
+}
+
+enum NoticeAudience {
+  ALL
+  CLASS
+  SECTION
+}
+
+enum CalendarEventType {
+  EXAM
+  PTM
+  EVENT
+  OTHER
+}
+
+enum MessageSenderRole {
+  PARENT
+  TEACHER
+}
+
+enum NotificationType {
+  NOTICE
+  HOMEWORK
+  FEE_DUE
+  ATTENDANCE_ALERT
+  MESSAGE
+  EXAM_RESULT
+  CALENDAR_EVENT
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  WHATSAPP
+  PUSH
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  DELIVERED
+}
+
+// Append-only — Parent Activity Log (requirement 21) AND the messaging audit-log requirement
+// (17) in one table (`action` values include both "VIEWED_REPORT_CARD"-style portal activity and
+// "MESSAGE_SENT"-style audit events). No `deletedAt` — same discipline as FeeAuditLog/
+// FeeLedgerEntry: a log is never edited or deleted, only appended to.
+model ParentActivityLog {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  guardianId String   @map("guardian_id") @db.Uuid
+  guardian   Guardian @relation(fields: [tenantId, guardianId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  userProfileId String      @map("user_profile_id") @db.Uuid
+  userProfile   UserProfile @relation(fields: [tenantId, userProfileId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  action     String
+  entityType String? @map("entity_type")
+  entityId   String? @map("entity_id") @db.Uuid
+  ipAddress  String? @map("ip_address")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([tenantId, guardianId, createdAt])
+  @@index([tenantId, userProfileId, createdAt])
+  @@map("parent_activity_logs")
+}
+
+// View-only this phase (Decision 3) — teacher-authored, class/section/subject-scoped, reuses
+// Subject/Teacher/Class/Section directly (no duplication). `sectionId` nullable = the whole
+// class, matching Holiday/WorkingDay's own "session-wide unless scoped narrower" shape.
+model Homework {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  classId String @map("class_id") @db.Uuid
+  class   Class  @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  sectionId String?  @map("section_id") @db.Uuid
+  section   Section? @relation(fields: [tenantId, sectionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  subjectId String  @map("subject_id") @db.Uuid
+  subject   Subject @relation(fields: [tenantId, subjectId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  teacherId String  @map("teacher_id") @db.Uuid
+  teacher   Teacher @relation(fields: [tenantId, teacherId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  title         String
+  description   String
+  assignedDate  DateTime @map("assigned_date") @db.Date
+  dueDate       DateTime @map("due_date") @db.Date
+  attachmentKey String?  @map("attachment_key")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  statuses HomeworkStatus[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, classId, sectionId])
+  @@index([tenantId, academicSessionId, dueDate])
+  @@map("homework")
+}
+
+// Per-student status on a Homework — teacher-set (Decision 3: no student upload), upsert-
+// corrected on the natural key, same "relationship record, no deletedAt" shape as
+// TeacherAssignment/StudentAttendance.
+model HomeworkStatus {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  homeworkId String   @map("homework_id") @db.Uuid
+  homework   Homework @relation(fields: [tenantId, homeworkId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  status HomeworkStatusValue @default(PENDING)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, homeworkId, studentId])
+  @@index([tenantId, studentId])
+  @@map("homework_statuses")
+}
+
+// Notice Board AND Broadcast Messages (Decision 4) — a broadcast is simply a Notice whose
+// publish action dispatches a Notification immediately; there is no separate broadcast model.
+// `audience` + nullable `classId`/`sectionId` mirror the same "ALL vs. scoped" shape as Holiday's
+// session-wide default.
+model Notice {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  title String
+  body  String
+
+  audience NoticeAudience @default(ALL)
+  classId  String?        @map("class_id") @db.Uuid
+  class    Class?         @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  sectionId String?  @map("section_id") @db.Uuid
+  section   Section? @relation(fields: [tenantId, sectionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  attachmentKey String? @map("attachment_key")
+
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(3)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, academicSessionId, publishedAt])
+  @@index([tenantId, classId])
+  @@index([tenantId, sectionId])
+  @@map("notices")
+}
+
+// School Calendar (requirement 15) — composed at READ time with the existing Holiday model
+// (Decision 7), never duplicated. Deliberately has no HOLIDAY value in CalendarEventType: a
+// holiday is always sourced from Holiday, a CalendarEvent is everything else on the calendar.
+model CalendarEvent {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  title       String
+  description String?
+  eventType   CalendarEventType @default(EVENT) @map("event_type")
+  startDate   DateTime          @map("start_date") @db.Date
+  endDate     DateTime?         @map("end_date") @db.Date
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, academicSessionId, startDate])
+  @@map("calendar_events")
+}
+
+// One thread per (student, guardian, teacher) triple — Parent <-> Teacher Messaging (requirement
+// 17). No `deletedAt` — a thread is deactivated (`isActive`), never removed, preserving history.
+model MessageThread {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  guardianId String   @map("guardian_id") @db.Uuid
+  guardian   Guardian @relation(fields: [tenantId, guardianId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  teacherId String  @map("teacher_id") @db.Uuid
+  teacher   Teacher @relation(fields: [tenantId, teacherId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  subject String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  messages Message[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, studentId, guardianId, teacherId])
+  @@index([tenantId, guardianId])
+  @@index([tenantId, teacherId])
+  @@map("message_threads")
+}
+
+// Append-only within a thread — no `deletedAt`/edit, matching every other immutable-once-sent
+// record in this schema (FeePayment, MarksEntry-adjacent). `readAt` is this message's own read
+// receipt (distinct from Notification.readAt, which tracks the notification alert, not the
+// message content itself).
+model Message {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  threadId String        @map("thread_id") @db.Uuid
+  thread   MessageThread @relation(fields: [tenantId, threadId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  senderUserProfileId String            @map("sender_user_profile_id") @db.Uuid
+  senderUserProfile   UserProfile       @relation(fields: [tenantId, senderUserProfileId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+  senderRole          MessageSenderRole @map("sender_role")
+
+  body String
+
+  sentAt DateTime  @default(now()) @map("sent_at") @db.Timestamptz(3)
+  readAt DateTime? @map("read_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, threadId, sentAt])
+  @@map("messages")
+}
+
+// The channel-agnostic fact ("this happened, this user should know") — every producer (Notice
+// published, Homework assigned, Message sent, fee-due reminder) writes exactly one row here
+// regardless of how many channels eventually deliver it. `readAt` is Push Notification Read
+// Status (requirement 19) — no separate model, since "read" is a property of the notification
+// record itself, not of any one channel. `priority` (requirement 10) lets a consumer sort/filter
+// urgency without a schema change later.
+model Notification {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  recipientUserProfileId String      @map("recipient_user_profile_id") @db.Uuid
+  recipient              UserProfile @relation(fields: [tenantId, recipientUserProfileId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  type     NotificationType
+  priority NotificationPriority @default(NORMAL)
+  title    String
+  body     String
+
+  referenceType String? @map("reference_type")
+  referenceId   String? @map("reference_id") @db.Uuid
+
+  readAt DateTime? @map("read_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  deliveries NotificationDelivery[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, recipientUserProfileId, readAt])
+  @@index([tenantId, recipientUserProfileId, createdAt])
+  @@map("notifications")
+}
+
+// One row per (notification, channel) attempted — the entire answer to "support Email/WhatsApp/
+// Push/SMS in future without redesign": adding a real channel later is a new NotificationSender
+// implementation behind the same interface (mirroring StorageService's own provider-swap shape),
+// never a schema migration. Only IN_APP is actually dispatched this phase; every other channel
+// value is reserved, unused.
+model NotificationDelivery {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  notificationId String       @map("notification_id") @db.Uuid
+  notification   Notification @relation(fields: [tenantId, notificationId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  channel NotificationChannel
+  status  NotificationDeliveryStatus @default(PENDING)
+
+  provider          String?
+  providerMessageId String?   @map("provider_message_id")
+  sentAt            DateTime? @map("sent_at") @db.Timestamptz(3)
+  error             String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, notificationId, channel])
+  @@index([tenantId, notificationId])
+  @@map("notification_deliveries")
 }

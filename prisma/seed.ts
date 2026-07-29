@@ -34,10 +34,11 @@ const ADMIN_ROLE_CODES = ["SUPER_ADMIN", "SCHOOL_ADMIN"] as const;
 // The 9 permission codes actually referenced by working code in this codebase (modules/users'
 // application services and app/settings/users/actions.ts), the 3 Sprint 4.8A document-management
 // codes, the 2 Sprint 4.9 ID card codes, the 4 Phase 5 attendance codes, the 11 Phase 6
-// timetable-management codes, the 15 Phase 7 examination-management codes, and — as of Phase 8 —
-// the 20 fee-management-and-billing codes. Every code here still follows the file's original
-// principle (only seed what real code references, or what a task explicitly asks to seed ahead of
-// its code — see Sprint 4.8A's own comment history for that exception).
+// timetable-management codes, the 15 Phase 7 examination-management codes, the 20 Phase 8
+// fee-management-and-billing codes, and — as of Phase 9 — the 22 parent-portal-and-communication
+// codes. Every code here still follows the file's original principle (only seed what real code
+// references, or what a task explicitly asks to seed ahead of its code — see Sprint 4.8A's own
+// comment history for that exception).
 //
 // Each entry now carries its own `roles` list rather than every permission going to the same
 // ADMIN_ROLE_CODES set — needed as of Sprint 4.9, whose 3-tier access model
@@ -429,6 +430,157 @@ const PERMISSIONS = [
     resource: "fee.auditlog",
     action: "view",
     roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
+  },
+  // Phase 9 — Parent Portal & Communication. `parent.*` codes are the first block in this file
+  // granted EXCLUSIVELY to the PARENT role — every parent-facing service is additionally gated
+  // by assertGuardianCanAccessStudent (row-level scoping RBAC alone can't express "only MY OWN
+  // children"), so RBAC here only ever answers "is this user a parent at all." `communication.*`
+  // codes are the staff-side counterpart: composing/publishing Notices, creating Homework,
+  // managing the Calendar, and teacher-initiated messaging.
+  {
+    code: "parent.dashboard.view",
+    resource: "parent.dashboard",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.student.view",
+    resource: "parent.student",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.attendance.view",
+    resource: "parent.attendance",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.result.view",
+    resource: "parent.result",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.reportcard.print",
+    resource: "parent.reportcard",
+    action: "print",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.fee.view",
+    resource: "parent.fee",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.payment.view",
+    resource: "parent.payment",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.receipt.print",
+    resource: "parent.receipt",
+    action: "print",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.homework.view",
+    resource: "parent.homework",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.notice.view",
+    resource: "parent.notice",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.calendar.view",
+    resource: "parent.calendar",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.message.send",
+    resource: "parent.message",
+    action: "send",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.message.view",
+    resource: "parent.message",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.notification.view",
+    resource: "parent.notification",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  {
+    code: "parent.account.link",
+    resource: "parent.account",
+    action: "link",
+    roles: [...ADMIN_ROLE_CODES, "RECEPTIONIST"] as const,
+  },
+  {
+    code: "communication.homework.manage",
+    resource: "communication.homework",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "communication.homework.view",
+    resource: "communication.homework",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "communication.notice.manage",
+    resource: "communication.notice",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
+  },
+  {
+    code: "communication.notice.view",
+    resource: "communication.notice",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER", "RECEPTIONIST"] as const,
+  },
+  {
+    code: "communication.calendar.manage",
+    resource: "communication.calendar",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
+  },
+  {
+    code: "communication.calendar.view",
+    resource: "communication.calendar",
+    action: "view",
+    roles: [
+      ...ADMIN_ROLE_CODES,
+      "PRINCIPAL",
+      "VICE_PRINCIPAL",
+      "TEACHER",
+      "CLASS_TEACHER",
+      "RECEPTIONIST",
+    ] as const,
+  },
+  {
+    code: "communication.message.send",
+    resource: "communication.message",
+    action: "send",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "communication.message.view",
+    resource: "communication.message",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
   },
 ] as const;
 

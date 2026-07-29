@@ -39,7 +39,13 @@ export interface AuthorizationContext extends AuthContext {
 //
 // Request-scoped memoization only (React cache()) — deliberately NOT cached across requests.
 // See PermissionVersion above for why that's a placeholder, not an oversight.
-const resolvePermissions = cache(async (tenantId: string, userId: string) => {
+//
+// Exported (Phase 9) so app/api/parent/v1/_lib/api-auth.ts can reuse this exact query rather than
+// duplicating it — that route-handler auth path deliberately does NOT call
+// getAuthorizationContext()/requireAuthContext() itself, since those redirect to /login on
+// failure (a browser-UX concern) instead of returning a clean 401/403 JSON response a mobile
+// client needs. Same underlying permission resolution, different failure behavior.
+export const resolvePermissions = cache(async (tenantId: string, userId: string) => {
   const userRoles = await withTenantContext(tenantId, (tx) =>
     tx.userRole.findMany({
       // `tenantId` is included explicitly, not just relied on via the UserRole -> UserProfile
