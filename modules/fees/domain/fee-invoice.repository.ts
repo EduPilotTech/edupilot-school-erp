@@ -7,7 +7,10 @@ export interface CreateFeeInvoiceInput {
   academicSessionId: string;
   classId: string;
   feeCategoryId: string;
-  feeStructureItemId: string;
+  // Phase 10 Decision 1: exactly one of these two is set — feeStructureItemId for tuition/
+  // exam-type invoices, routeFeeRuleId for transport invoices generated from a RouteFeeRule.
+  feeStructureItemId?: string | null;
+  routeFeeRuleId?: string | null;
   installmentPlanId?: string | null;
   installmentNumber?: number | null;
   appliedConcessionId?: string | null;
@@ -36,6 +39,14 @@ export interface FeeInvoiceRepository {
     tenantId: string,
     studentId: string,
     feeStructureItemId: string,
+    billingPeriod: string
+  ): Promise<FeeInvoiceEntity | null>;
+  // Phase 10 — the transport-billing analogue of findByStudentAndItemAndPeriod, used by
+  // generateTransportInvoices for the same "already generated, don't duplicate" idempotency check.
+  findByStudentAndRouteFeeRuleAndPeriod(
+    tenantId: string,
+    studentId: string,
+    routeFeeRuleId: string,
     billingPeriod: string
   ): Promise<FeeInvoiceEntity | null>;
   findByStudent(tenantId: string, studentId: string, academicSessionId: string): Promise<FeeInvoiceEntity[]>;

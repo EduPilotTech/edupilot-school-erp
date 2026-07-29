@@ -12,6 +12,7 @@ export function toFeeInvoiceDTO(entity: FeeInvoiceEntity): FeeInvoiceDTO {
     classId: entity.classId,
     feeCategoryId: entity.feeCategoryId,
     feeStructureItemId: entity.feeStructureItemId,
+    routeFeeRuleId: entity.routeFeeRuleId,
     installmentPlanId: entity.installmentPlanId,
     installmentNumber: entity.installmentNumber,
     appliedConcessionId: entity.appliedConcessionId,

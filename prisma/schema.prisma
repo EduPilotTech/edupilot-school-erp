@@ -100,56 +100,65 @@ model Tenant {
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
-  school                 School?
-  academicSessions       AcademicSession[]
-  roles                  Role[]
-  userProfiles           UserProfile[]
-  classes                Class[]
-  sections               Section[]
-  students               Student[]
-  guardians              Guardian[]
-  enrollments            Enrollment[]
-  studentDocuments       StudentDocument[]
-  studentAttendances     StudentAttendance[]
-  teacherAttendances     TeacherAttendance[]
-  subjects               Subject[]
-  classrooms             Classroom[]
-  teachers               Teacher[]
-  workingDays            WorkingDay[]
-  holidays               Holiday[]
-  periodConfigurations   PeriodConfiguration[]
-  teacherAssignments     TeacherAssignment[]
-  timetableEntries       TimetableEntry[]
-  examTypes              ExamType[]
-  exams                  Exam[]
-  examSubjects           ExamSubject[]
-  marksEntries           MarksEntry[]
-  gradeScales            GradeScale[]
-  gradeBands             GradeBand[]
-  examResults            ExamResult[]
-  feeCategories          FeeCategory[]
-  feeStructures          FeeStructure[]
-  feeStructureItems      FeeStructureItem[]
-  studentFeeAssignments  StudentFeeAssignment[]
-  installmentPlans       InstallmentPlan[]
-  installmentPlanItems   InstallmentPlanItem[]
-  fineRules              FineRule[]
-  feeConcessions         FeeConcession[]
-  feeInvoices            FeeInvoice[]
-  feePayments            FeePayment[]
-  feePaymentAllocations  FeePaymentAllocation[]
-  feeNumberSequences     FeeNumberSequence[]
-  feeAuditLogs           FeeAuditLog[]
-  feeLedgerEntries       FeeLedgerEntry[]
-  parentActivityLogs     ParentActivityLog[]
-  homework               Homework[]
-  homeworkStatuses       HomeworkStatus[]
-  notices                Notice[]
-  calendarEvents         CalendarEvent[]
-  messageThreads         MessageThread[]
-  messages               Message[]
-  notifications          Notification[]
-  notificationDeliveries NotificationDelivery[]
+  school                      School?
+  academicSessions            AcademicSession[]
+  roles                       Role[]
+  userProfiles                UserProfile[]
+  classes                     Class[]
+  sections                    Section[]
+  students                    Student[]
+  guardians                   Guardian[]
+  enrollments                 Enrollment[]
+  studentDocuments            StudentDocument[]
+  studentAttendances          StudentAttendance[]
+  teacherAttendances          TeacherAttendance[]
+  subjects                    Subject[]
+  classrooms                  Classroom[]
+  teachers                    Teacher[]
+  workingDays                 WorkingDay[]
+  holidays                    Holiday[]
+  periodConfigurations        PeriodConfiguration[]
+  teacherAssignments          TeacherAssignment[]
+  timetableEntries            TimetableEntry[]
+  examTypes                   ExamType[]
+  exams                       Exam[]
+  examSubjects                ExamSubject[]
+  marksEntries                MarksEntry[]
+  gradeScales                 GradeScale[]
+  gradeBands                  GradeBand[]
+  examResults                 ExamResult[]
+  feeCategories               FeeCategory[]
+  feeStructures               FeeStructure[]
+  feeStructureItems           FeeStructureItem[]
+  studentFeeAssignments       StudentFeeAssignment[]
+  installmentPlans            InstallmentPlan[]
+  installmentPlanItems        InstallmentPlanItem[]
+  fineRules                   FineRule[]
+  feeConcessions              FeeConcession[]
+  feeInvoices                 FeeInvoice[]
+  feePayments                 FeePayment[]
+  feePaymentAllocations       FeePaymentAllocation[]
+  feeNumberSequences          FeeNumberSequence[]
+  feeAuditLogs                FeeAuditLog[]
+  feeLedgerEntries            FeeLedgerEntry[]
+  parentActivityLogs          ParentActivityLog[]
+  homework                    Homework[]
+  homeworkStatuses            HomeworkStatus[]
+  notices                     Notice[]
+  calendarEvents              CalendarEvent[]
+  messageThreads              MessageThread[]
+  messages                    Message[]
+  notifications               Notification[]
+  notificationDeliveries      NotificationDelivery[]
+  vehicles                    Vehicle[]
+  drivers                     Driver[]
+  helpers                     Helper[]
+  routes                      Route[]
+  routeStops                  RouteStop[]
+  vehicleAssignments          VehicleAssignment[]
+  studentTransportAssignments StudentTransportAssignment[]
+  routeFeeRules               RouteFeeRule[]
+  transportAttendances        TransportAttendance[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -193,6 +202,7 @@ model School {
   classrooms       Classroom[]
   examTypes        ExamType[]
   feeCategories    FeeCategory[]
+  routes           Route[]
 
   // Composite unique alongside the PK — required so AcademicSession can enforce, via a real
   // foreign key, that its (tenantId, schoolId) pair always points to a School actually owned
@@ -231,28 +241,31 @@ model AcademicSession {
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
-  classes               Class[]
-  enrollments           Enrollment[]
-  attendances           StudentAttendance[]
-  workingDays           WorkingDay[]
-  holidays              Holiday[]
-  periodConfigurations  PeriodConfiguration[]
-  teacherAssignments    TeacherAssignment[]
-  timetableEntries      TimetableEntry[]
-  exams                 Exam[]
-  gradeScales           GradeScale[]
-  feeStructures         FeeStructure[]
-  studentFeeAssignments StudentFeeAssignment[]
-  installmentPlans      InstallmentPlan[]
-  fineRules             FineRule[]
-  feeConcessions        FeeConcession[]
-  feeInvoices           FeeInvoice[]
-  feePayments           FeePayment[]
-  feeNumberSequences    FeeNumberSequence[]
-  feeLedgerEntries      FeeLedgerEntry[]
-  homework              Homework[]
-  notices               Notice[]
-  calendarEvents        CalendarEvent[]
+  classes                     Class[]
+  enrollments                 Enrollment[]
+  attendances                 StudentAttendance[]
+  workingDays                 WorkingDay[]
+  holidays                    Holiday[]
+  periodConfigurations        PeriodConfiguration[]
+  teacherAssignments          TeacherAssignment[]
+  timetableEntries            TimetableEntry[]
+  exams                       Exam[]
+  gradeScales                 GradeScale[]
+  feeStructures               FeeStructure[]
+  studentFeeAssignments       StudentFeeAssignment[]
+  installmentPlans            InstallmentPlan[]
+  fineRules                   FineRule[]
+  feeConcessions              FeeConcession[]
+  feeInvoices                 FeeInvoice[]
+  feePayments                 FeePayment[]
+  feeNumberSequences          FeeNumberSequence[]
+  feeLedgerEntries            FeeLedgerEntry[]
+  homework                    Homework[]
+  notices                     Notice[]
+  calendarEvents              CalendarEvent[]
+  vehicleAssignments          VehicleAssignment[]
+  studentTransportAssignments StudentTransportAssignment[]
+  routeFeeRules               RouteFeeRule[]
 
   // Added in Sprint 4 alongside @@unique([tenantId, sessionName]): a compound unique so
   // Class/Enrollment can reference AcademicSession via the same composite-FK pattern already
@@ -403,6 +416,8 @@ model UserProfile {
   parentActivityLogs ParentActivityLog[]
   messages           Message[]
   notifications      Notification[]
+  driver             Driver?
+  helper             Helper?
 
   // Compound unique alongside the PK — required so UserRole can enforce, via a real foreign
   // key, that its (tenantId, userId) pair always points to a UserProfile actually owned by
@@ -631,6 +646,8 @@ model Student {
   feeLedgerEntries      FeeLedgerEntry[]
   homeworkStatuses      HomeworkStatus[]
   messageThreads        MessageThread[]
+  transportAssignments  StudentTransportAssignment[]
+  transportAttendances  TransportAttendance[]
 
   // Compound unique alongside the PK — required so StudentGuardian/Enrollment can enforce, via
   // a real foreign key, that their (tenantId, studentId) pair always points to a Student
@@ -1612,6 +1629,7 @@ model FeeCategory {
   fineRules      FineRule[]
   concessions    FeeConcession[]
   invoices       FeeInvoice[]
+  routeFeeRules  RouteFeeRule[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, code])
@@ -1912,8 +1930,20 @@ model FeeInvoice {
   feeCategoryId String      @map("fee_category_id") @db.Uuid
   feeCategory   FeeCategory @relation(fields: [tenantId, feeCategoryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
 
-  feeStructureItemId String           @map("fee_structure_item_id") @db.Uuid
-  feeStructureItem   FeeStructureItem @relation(fields: [tenantId, feeStructureItemId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+  // Nullable as of Phase 10 (Decision 1): a tuition/exam-type invoice always has this set and
+  // `routeFeeRuleId` null; a transport invoice always has `routeFeeRuleId` set and this null —
+  // "exactly one of the two" is a service-layer invariant (same category as Role.code's
+  // SYSTEM-only rule), not a DB CHECK constraint. Kept nullable rather than splitting FeeInvoice
+  // into two models so the entire collection/reversal/ledger/receipt/report pipeline stays one
+  // pipeline for both fee kinds — the whole point of Phase 10 Decision 1.
+  feeStructureItemId String?           @map("fee_structure_item_id") @db.Uuid
+  feeStructureItem   FeeStructureItem? @relation(fields: [tenantId, feeStructureItemId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Phase 10 — set only for transport-billing invoices generated from a RouteFeeRule (see
+  // generateTransportInvoices). Mirrors feeStructureItemId's shape exactly, just keyed by route
+  // instead of class.
+  routeFeeRuleId String?       @map("route_fee_rule_id") @db.Uuid
+  routeFeeRule   RouteFeeRule? @relation(fields: [tenantId, routeFeeRuleId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
 
   installmentPlanId String?          @map("installment_plan_id") @db.Uuid
   installmentPlan   InstallmentPlan? @relation(fields: [tenantId, installmentPlanId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
@@ -1948,10 +1978,17 @@ model FeeInvoice {
   @@unique([tenantId, id])
   @@unique([tenantId, invoiceNumber])
   @@unique([tenantId, studentId, feeStructureItemId, billingPeriod])
+  // Phase 10: feeStructureItemId is NULL on every transport invoice, and Postgres treats each
+  // NULL as distinct in a unique index — so the constraint above does not, by itself, stop two
+  // transport invoices for the same student/period. This second constraint is what makes that a
+  // real DB guarantee for the route-keyed case (inert for tuition rows, where routeFeeRuleId is
+  // always NULL).
+  @@unique([tenantId, studentId, routeFeeRuleId, billingPeriod])
   @@index([tenantId, studentId])
   @@index([tenantId, classId, status])
   @@index([tenantId, academicSessionId, status])
   @@index([tenantId, dueDate])
+  @@index([tenantId, routeFeeRuleId])
   @@map("fee_invoices")
 }
 
@@ -2148,6 +2185,7 @@ enum NotificationType {
   MESSAGE
   EXAM_RESULT
   CALENDAR_EVENT
+  TRANSPORT_ALERT
 }
 
 enum NotificationPriority {
@@ -2461,4 +2499,417 @@ model NotificationDelivery {
   @@unique([tenantId, notificationId, channel])
   @@index([tenantId, notificationId])
   @@map("notification_deliveries")
+}
+
+// --- Phase 10 — Transport Management (modules/transport) -----------------------------------
+//
+// Architecture review approved. Key shape decisions:
+//   - Vehicle, Driver, Helper, Route, RouteStop are reusable master data (Decision 5) — persist
+//     across academic sessions, mirroring Teacher/Classroom/Subject's own precedent. Only
+//     VehicleAssignment, StudentTransportAssignment, and RouteFeeRule are session-scoped.
+//   - Driver.userProfileId / Helper.userProfileId are nullable (Decision 3) — no driver/helper
+//     portal login this phase, mirroring Guardian's own nullable-until-linked shape rather than
+//     Teacher's mandatory one.
+//   - VehicleAssignment is a 1:1 Route<->Vehicle<->Driver(+Helper) mapping per session for V1
+//     (Decision 2) — reassignment updates the same row (vehicleId/driverId/helperId), never
+//     inserts a new one, mirroring StudentFeeAssignment's own update-in-place shape.
+//   - RouteFeeRule + the nullable FeeInvoice.routeFeeRuleId/feeStructureItemId (added above, see
+//     FeeInvoice) is the entire "Transport Fee Integration" answer (Decision 1) — a transport
+//     charge is a real FeeInvoice row, reusing 100% of the Phase 8 collection/reversal/ledger/
+//     receipt/report pipeline. No parallel billing model.
+//   - Vehicle carries a lifecycle `status` (Decision 7) rather than a plain isActive boolean —
+//     ACTIVE/MAINTENANCE/BREAKDOWN/INACTIVE are operationally distinct states a fleet manager
+//     needs to see, not just "on or off."
+//   - StudentTransportAssignment carries a lifecycle `status` (Decision 8) for the same reason —
+//     TEMPORARY_STOP (e.g. school holidays the family opts out of, short medical leave) is not
+//     the same as DISCONTINUED (opted out of transport entirely).
+//   - TransportAttendance mirrors StudentAttendance's exact shape (one row per student per day,
+//     denormalizing routeId/stopId/vehicleId at mark-time so a mid-year route change never
+//     retroactively rewrites history) except split by `tripLeg` (PICKUP/DROP) since a student can
+//     be boarded on the morning pickup and separately marked absent on the afternoon drop.
+//   - GPS fields (Decision 11) are reserved, nullable, and unused this phase — the exact
+//     precedent set by FeePayment's gatewayProvider/gatewayTransactionId fields in Phase 8.
+
+enum VehicleType {
+  BUS
+  MINI_BUS
+  VAN
+  OTHER
+}
+
+enum FuelType {
+  DIESEL
+  PETROL
+  CNG
+  ELECTRIC
+  OTHER
+}
+
+// Decision 7 — operationally distinct fleet states, not a boolean.
+enum VehicleStatus {
+  ACTIVE
+  MAINTENANCE
+  BREAKDOWN
+  INACTIVE
+}
+
+enum StudentTransportTripType {
+  PICKUP_ONLY
+  DROP_ONLY
+  PICKUP_AND_DROP
+}
+
+// Decision 8 — a temporary opt-out (holiday, short leave) is not the same fact as a permanent one.
+enum StudentTransportAssignmentStatus {
+  ACTIVE
+  TEMPORARY_STOP
+  DISCONTINUED
+}
+
+enum TransportTripLeg {
+  PICKUP
+  DROP
+}
+
+enum TransportAttendanceStatus {
+  BOARDED
+  ABSENT
+  LATE
+}
+
+// The fleet vehicle record. Tenant-scoped only (no schoolId), mirroring Teacher's own precedent
+// for staff/asset-type entities in a product where one Tenant is always exactly one School.
+model Vehicle {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  registrationNumber String      @map("registration_number")
+  vehicleType        VehicleType @map("vehicle_type")
+  make               String?
+  model              String?
+  manufactureYear    Int?        @map("manufacture_year")
+  seatingCapacity    Int         @map("seating_capacity")
+  fuelType           FuelType?   @map("fuel_type")
+
+  insuranceExpiryDate DateTime? @map("insurance_expiry_date") @db.Date
+  fitnessExpiryDate   DateTime? @map("fitness_expiry_date") @db.Date
+  permitExpiryDate    DateTime? @map("permit_expiry_date") @db.Date
+  pollutionExpiryDate DateTime? @map("pollution_expiry_date") @db.Date
+
+  status VehicleStatus @default(ACTIVE)
+
+  // Decision 11 — reserved for future live GPS tracking. Unused this phase: no write path, no
+  // polling, no map UI.
+  gpsDeviceId        String?   @map("gps_device_id")
+  lastKnownLatitude  Decimal?  @map("last_known_latitude") @db.Decimal(9, 6)
+  lastKnownLongitude Decimal?  @map("last_known_longitude") @db.Decimal(9, 6)
+  lastLocationAt     DateTime? @map("last_location_at") @db.Timestamptz(3)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  vehicleAssignments   VehicleAssignment[]
+  transportAttendances TransportAttendance[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, registrationNumber])
+  @@index([tenantId, status])
+  @@map("vehicles")
+}
+
+// Decision 3: userProfileId is nullable — most drivers never get a portal login this phase.
+model Driver {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  userProfileId String?      @unique @map("user_profile_id") @db.Uuid
+  userProfile   UserProfile? @relation(fields: [tenantId, userProfileId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeCode String  @map("employee_code")
+  fullName     String  @map("full_name")
+  phone        String?
+  address      String?
+
+  licenseNumber     String    @map("license_number")
+  licenseType       String?   @map("license_type")
+  licenseExpiryDate DateTime? @map("license_expiry_date") @db.Date
+  dateOfJoining     DateTime? @map("date_of_joining") @db.Date
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  vehicleAssignments VehicleAssignment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, userProfileId])
+  @@unique([tenantId, employeeCode])
+  @@index([tenantId, isActive])
+  @@map("drivers")
+}
+
+// Conductor/attendant. Same shape as Driver minus license fields (Decision 3 applies equally).
+model Helper {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  userProfileId String?      @unique @map("user_profile_id") @db.Uuid
+  userProfile   UserProfile? @relation(fields: [tenantId, userProfileId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeCode  String    @map("employee_code")
+  fullName      String    @map("full_name")
+  phone         String?
+  address       String?
+  dateOfJoining DateTime? @map("date_of_joining") @db.Date
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  vehicleAssignments VehicleAssignment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, userProfileId])
+  @@unique([tenantId, employeeCode])
+  @@index([tenantId, isActive])
+  @@map("helpers")
+}
+
+// A physical transport route — school-scoped, persistent master data (Decision 5), mirroring
+// Classroom's own precedent: reused year to year, not reset every session.
+model Route {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name        String
+  code        String
+  description String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  stops                       RouteStop[]
+  vehicleAssignments          VehicleAssignment[]
+  studentTransportAssignments StudentTransportAssignment[]
+  routeFeeRules               RouteFeeRule[]
+  transportAttendances        TransportAttendance[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("routes")
+}
+
+// One boarding point along a Route, ordered by sequenceOrder. Reused across sessions like Route
+// itself (Decision 5).
+model RouteStop {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  routeId String @map("route_id") @db.Uuid
+  route   Route  @relation(fields: [tenantId, routeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name          String
+  sequenceOrder Int       @map("sequence_order")
+  pickupTime    DateTime? @map("pickup_time") @db.Time
+  dropTime      DateTime? @map("drop_time") @db.Time
+  landmark      String?
+
+  // Decision 11 — reserved for future map-based stop plotting. Unused this phase.
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  studentTransportAssignments StudentTransportAssignment[]
+  transportAttendances        TransportAttendance[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, routeId, sequenceOrder])
+  @@index([tenantId, routeId])
+  @@map("route_stops")
+}
+
+// Decision 2: a 1:1 Route<->Vehicle<->Driver(+Helper) mapping per session. Reassigning the crew
+// or vehicle mid-session updates this same row — mirrors StudentFeeAssignment's own
+// update-in-place shape (isActive is for "this route currently has no assigned vehicle," not a
+// history log of past assignments).
+model VehicleAssignment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  routeId String @map("route_id") @db.Uuid
+  route   Route  @relation(fields: [tenantId, routeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  vehicleId String  @map("vehicle_id") @db.Uuid
+  vehicle   Vehicle @relation(fields: [tenantId, vehicleId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  driverId String @map("driver_id") @db.Uuid
+  driver   Driver @relation(fields: [tenantId, driverId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  helperId String? @map("helper_id") @db.Uuid
+  helper   Helper? @relation(fields: [tenantId, helperId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, routeId, academicSessionId])
+  @@unique([tenantId, vehicleId, academicSessionId])
+  @@index([tenantId, driverId])
+  @@index([tenantId, helperId])
+  @@map("vehicle_assignments")
+}
+
+// Binds a Student to a Route + Stop for a session — the transport analogue of
+// StudentFeeAssignment. One row per student per session (Decision 8's `status` covers
+// reassignment/opt-out without a new row, same reasoning as StudentFeeAssignment's isActive).
+model StudentTransportAssignment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  routeId String @map("route_id") @db.Uuid
+  route   Route  @relation(fields: [tenantId, routeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  stopId String    @map("stop_id") @db.Uuid
+  stop   RouteStop @relation(fields: [tenantId, stopId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  tripType StudentTransportTripType         @default(PICKUP_AND_DROP) @map("trip_type")
+  status   StudentTransportAssignmentStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  transportAttendances TransportAttendance[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, studentId, academicSessionId])
+  @@index([tenantId, routeId])
+  @@index([tenantId, stopId])
+  @@map("student_transport_assignments")
+}
+
+// The transport analogue of FeeStructureItem — amount keyed by Route instead of Class (Decision
+// 1). Billing generation reads this to create real FeeInvoice rows (see FeeInvoice.routeFeeRuleId
+// above and generateTransportInvoices).
+model RouteFeeRule {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  routeId String @map("route_id") @db.Uuid
+  route   Route  @relation(fields: [tenantId, routeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  feeCategoryId String      @map("fee_category_id") @db.Uuid
+  feeCategory   FeeCategory @relation(fields: [tenantId, feeCategoryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  amount    Decimal      @db.Decimal(12, 2)
+  frequency FeeFrequency
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  invoices FeeInvoice[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, routeId, academicSessionId, feeCategoryId])
+  @@index([tenantId, academicSessionId])
+  @@map("route_fee_rules")
+}
+
+// Daily boarding record — mirrors StudentAttendance's exact shape, split by tripLeg since a
+// student is boarded/marked independently for the morning pickup and the afternoon drop.
+// routeId/stopId/vehicleId are denormalized at mark-time (same reasoning as StudentAttendance
+// denormalizing classId/sectionId): a mid-year route change must never retroactively rewrite
+// past attendance.
+model TransportAttendance {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  studentTransportAssignmentId String                     @map("student_transport_assignment_id") @db.Uuid
+  studentTransportAssignment   StudentTransportAssignment @relation(fields: [tenantId, studentTransportAssignmentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  routeId String @map("route_id") @db.Uuid
+  route   Route  @relation(fields: [tenantId, routeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  stopId String    @map("stop_id") @db.Uuid
+  stop   RouteStop @relation(fields: [tenantId, stopId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  vehicleId String  @map("vehicle_id") @db.Uuid
+  vehicle   Vehicle @relation(fields: [tenantId, vehicleId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  date    DateTime                  @db.Date
+  tripLeg TransportTripLeg          @map("trip_leg")
+  status  TransportAttendanceStatus
+
+  remarks  String?
+  markedBy String? @map("marked_by") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, studentId, date, tripLeg])
+  @@index([tenantId, routeId, date])
+  @@index([tenantId, vehicleId, date])
+  @@index([tenantId, studentTransportAssignmentId])
+  @@map("transport_attendance")
 }

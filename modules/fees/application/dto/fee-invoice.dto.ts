@@ -33,7 +33,8 @@ export interface FeeInvoiceDTO {
   academicSessionId: string;
   classId: string;
   feeCategoryId: string;
-  feeStructureItemId: string;
+  feeStructureItemId: string | null;
+  routeFeeRuleId: string | null;
   installmentPlanId: string | null;
   installmentNumber: number | null;
   appliedConcessionId: string | null;

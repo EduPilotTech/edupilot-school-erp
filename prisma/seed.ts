@@ -25,6 +25,10 @@ const SYSTEM_ROLES = [
   // narrower role than ACCOUNTANT (structures/concessions/reversals/reports). No existing role
   // fit this scope: RECEPTIONIST is front-office but not fee-specific, ACCOUNTANT is broader.
   { code: "CASHIER", name: "Cashier", isProtected: false },
+  // Phase 10 — day-to-day transport operations (vehicles, drivers, helpers, routes, stops,
+  // assignments, daily boarding attendance). Mirrors CASHIER's own precedent: a narrower,
+  // module-specific role rather than overloading SCHOOL_ADMIN or an unrelated existing role.
+  { code: "TRANSPORT_MANAGER", name: "Transport Manager", isProtected: false },
 ] as const;
 
 // Only Super Admin and School Admin hold the base admin permission set — every other system
@@ -35,10 +39,11 @@ const ADMIN_ROLE_CODES = ["SUPER_ADMIN", "SCHOOL_ADMIN"] as const;
 // application services and app/settings/users/actions.ts), the 3 Sprint 4.8A document-management
 // codes, the 2 Sprint 4.9 ID card codes, the 4 Phase 5 attendance codes, the 11 Phase 6
 // timetable-management codes, the 15 Phase 7 examination-management codes, the 20 Phase 8
-// fee-management-and-billing codes, and — as of Phase 9 — the 22 parent-portal-and-communication
-// codes. Every code here still follows the file's original principle (only seed what real code
-// references, or what a task explicitly asks to seed ahead of its code — see Sprint 4.8A's own
-// comment history for that exception).
+// fee-management-and-billing codes, the Phase 9 parent-portal-and-communication codes, and — as
+// of Phase 10 — the 12 transport-management codes (11 `transport.*` staff-side + 1
+// `parent.transport.view`). Every code here still follows the file's original principle (only
+// seed what real code references, or what a task explicitly asks to seed ahead of its code — see
+// Sprint 4.8A's own comment history for that exception).
 //
 // Each entry now carries its own `roles` list rather than every permission going to the same
 // ADMIN_ROLE_CODES set — needed as of Sprint 4.9, whose 3-tier access model
@@ -581,6 +586,82 @@ const PERMISSIONS = [
     resource: "communication.message",
     action: "view",
     roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  // Phase 10 — Transport Management. Manage-type codes go to Admin + the new TRANSPORT_MANAGER
+  // role; view/report codes add PRINCIPAL for oversight, mirroring the Fee module's own
+  // ADMIN+ACCOUNTANT+PRINCIPAL pattern. parent.transport.view follows the existing parent.*.view
+  // naming convention exactly (PARENT role only).
+  {
+    code: "transport.vehicle.manage",
+    resource: "transport.vehicle",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER"] as const,
+  },
+  {
+    code: "transport.driver.manage",
+    resource: "transport.driver",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER"] as const,
+  },
+  {
+    code: "transport.helper.manage",
+    resource: "transport.helper",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER"] as const,
+  },
+  {
+    code: "transport.route.manage",
+    resource: "transport.route",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER"] as const,
+  },
+  {
+    code: "transport.stop.manage",
+    resource: "transport.stop",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER"] as const,
+  },
+  {
+    code: "transport.assignment.manage",
+    resource: "transport.assignment",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER"] as const,
+  },
+  {
+    code: "transport.student-assignment.manage",
+    resource: "transport.student-assignment",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER"] as const,
+  },
+  {
+    code: "transport.fee-rule.manage",
+    resource: "transport.fee-rule",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER", "ACCOUNTANT"] as const,
+  },
+  {
+    code: "transport.attendance.mark",
+    resource: "transport.attendance",
+    action: "mark",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER"] as const,
+  },
+  {
+    code: "transport.attendance.view",
+    resource: "transport.attendance",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER", "PRINCIPAL"] as const,
+  },
+  {
+    code: "transport.report.view",
+    resource: "transport.report",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "TRANSPORT_MANAGER", "PRINCIPAL"] as const,
+  },
+  {
+    code: "parent.transport.view",
+    resource: "parent.transport",
+    action: "view",
+    roles: ["PARENT"] as const,
   },
 ] as const;
 
