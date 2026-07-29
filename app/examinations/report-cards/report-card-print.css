@@ -1,0 +1,31 @@
+/* Phase 7 — report card print layout. Imported only by app/examinations/report-cards/page.tsx,
+   same route-scoping precedent as id-card-print.css/timetable-print.css. `.timetable-screen-only`
+   (not a new class) is what ReportCardPrintView's controls actually render — it reuses
+   TimetablePrintControls directly (Phase 7 Decision 6: reuse the existing print/export stack, no
+   near-duplicate component), so this file hides that same class rather than inventing its own. */
+
+@media print {
+  @page {
+    size: portrait;
+    margin: 12mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #report-card-print-area,
+  #report-card-print-area * {
+    visibility: visible;
+  }
+
+  #report-card-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+  }
+
+  .timetable-screen-only {
+    display: none !important;
+  }
+}

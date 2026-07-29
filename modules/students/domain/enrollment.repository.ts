@@ -28,6 +28,16 @@ export interface EnrollmentRepository {
 
   findHistoryForStudent(tenantId: string, studentId: string): Promise<EnrollmentEntity[]>;
 
+  // Every current (`endDate IS NULL`) enrollment in a Class, across every Section — added for
+  // Phase 7's bulk result generation, which needs each currently-enrolled student's own
+  // sectionId (not just their name/section-name, which is all the Student List's read-model
+  // projection carries). Purely additive: no schema change, no change to any existing method.
+  findCurrentForClass(
+    tenantId: string,
+    classId: string,
+    academicSessionId: string
+  ): Promise<EnrollmentEntity[]>;
+
   // `tx` (Sprint 4 — Step 4): optional. Omitted, this opens its own transaction exactly as
   // before — every existing caller is unaffected. Provided (by admit-student.service.ts, which
   // must create Student, Guardian, StudentGuardian, and Enrollment atomically), this call joins
@@ -35,12 +45,16 @@ export interface EnrollmentRepository {
   create(input: CreateEnrollmentInput, tx?: Prisma.TransactionClient): Promise<EnrollmentEntity>;
 
   // The one allowed mutation: sets `endDate`/`status` on an existing row, closing it. Never
-  // touches `classId`/`sectionId`/`academicSessionId`.
+  // touches `classId`/`sectionId`/`academicSessionId`. `tx` optional, same Sprint 4 — Step 4
+  // pattern as `create` above — added for Phase 7's promoteStudents service, which must close
+  // the old Enrollment and create the new one atomically, per Decision 2 (reuse Enrollment
+  // directly, no Promotion model).
   close(
     tenantId: string,
     id: string,
     endDate: Date,
     status: EnrollmentStatusValue,
-    updatedBy: string | null
+    updatedBy: string | null,
+    tx?: Prisma.TransactionClient
   ): Promise<EnrollmentEntity>;
 }

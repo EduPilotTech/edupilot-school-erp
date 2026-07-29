@@ -29,10 +29,11 @@ const ADMIN_ROLE_CODES = ["SUPER_ADMIN", "SCHOOL_ADMIN"] as const;
 
 // The 9 permission codes actually referenced by working code in this codebase (modules/users'
 // application services and app/settings/users/actions.ts), the 3 Sprint 4.8A document-management
-// codes, the 2 Sprint 4.9 ID card codes, the 4 Phase 5 attendance codes, and — as of Phase 6 —
-// the 11 timetable-management codes. Every code here still follows the file's original principle
-// (only seed what real code references, or what a task explicitly asks to seed ahead of its
-// code — see Sprint 4.8A's own comment history for that exception).
+// codes, the 2 Sprint 4.9 ID card codes, the 4 Phase 5 attendance codes, the 11 Phase 6
+// timetable-management codes, and — as of Phase 7 — the 15 examination-management codes. Every
+// code here still follows the file's original principle (only seed what real code references,
+// or what a task explicitly asks to seed ahead of its code — see Sprint 4.8A's own comment
+// history for that exception).
 //
 // Each entry now carries its own `roles` list rather than every permission going to the same
 // ADMIN_ROLE_CODES set — needed as of Sprint 4.9, whose 3-tier access model
@@ -169,6 +170,125 @@ const PERMISSIONS = [
     resource: "timetable",
     action: "print",
     roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "RECEPTIONIST"] as const,
+  },
+  // Phase 7 — Examination & Assessment Management. Matches the approved architecture review's
+  // permission matrix. `marks.entry` is granted broadly to Teacher/Class Teacher at the RBAC
+  // layer — the narrower "only your own TeacherAssignment" rule is enforced in
+  // marks-authorization.helpers.ts, not here (RBAC only ever answers "can this role act at all,"
+  // never "on which specific rows" — same division of responsibility as every other permission
+  // in this file). `result.generate` and `result.publish` are separate codes (not folded into
+  // one) so a school can grant "compute results" without also granting "lock them in publicly,"
+  // mirroring how `student.idcard.view`/`.print` are already split.
+  {
+    code: "examtype.manage",
+    resource: "examtype",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "examtype.view",
+    resource: "examtype",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "exam.manage",
+    resource: "exam",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL"] as const,
+  },
+  {
+    code: "exam.view",
+    resource: "exam",
+    action: "view",
+    roles: [
+      ...ADMIN_ROLE_CODES,
+      "PRINCIPAL",
+      "VICE_PRINCIPAL",
+      "TEACHER",
+      "CLASS_TEACHER",
+      "RECEPTIONIST",
+    ] as const,
+  },
+  {
+    code: "exam.subject.manage",
+    resource: "exam.subject",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
+  },
+  {
+    code: "grade.manage",
+    resource: "grade",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "grade.view",
+    resource: "grade",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "marks.entry",
+    resource: "marks",
+    action: "entry",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "marks.view",
+    resource: "marks",
+    action: "view",
+    roles: [
+      ...ADMIN_ROLE_CODES,
+      "PRINCIPAL",
+      "VICE_PRINCIPAL",
+      "TEACHER",
+      "CLASS_TEACHER",
+      "RECEPTIONIST",
+    ] as const,
+  },
+  {
+    code: "result.generate",
+    resource: "result",
+    action: "generate",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
+  },
+  {
+    code: "result.publish",
+    resource: "result",
+    action: "publish",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
+  },
+  {
+    code: "result.view",
+    resource: "result",
+    action: "view",
+    roles: [
+      ...ADMIN_ROLE_CODES,
+      "PRINCIPAL",
+      "VICE_PRINCIPAL",
+      "TEACHER",
+      "CLASS_TEACHER",
+      "RECEPTIONIST",
+    ] as const,
+  },
+  {
+    code: "reportcard.print",
+    resource: "reportcard",
+    action: "print",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "RECEPTIONIST"] as const,
+  },
+  {
+    code: "ranking.view",
+    resource: "ranking",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "student.promote",
+    resource: "student",
+    action: "promote",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
   },
 ] as const;
 

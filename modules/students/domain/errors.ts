@@ -75,3 +75,12 @@ export class DocumentNotFoundError extends NotFoundError {
     super(message);
   }
 }
+
+// Phase 7 — thrown by promote-students.service.ts when a student named in a promotion batch has
+// no current (`endDate IS NULL`) Enrollment in the given source AcademicSession — there is
+// nothing to close, so there is nothing to promote FROM.
+export class StudentNotEnrolledInSessionError extends BusinessRuleError {
+  constructor(message = "This student has no current enrollment in the source academic session.") {
+    super(message);
+  }
+}

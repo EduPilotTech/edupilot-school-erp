@@ -120,6 +120,13 @@ model Tenant {
   periodConfigurations PeriodConfiguration[]
   teacherAssignments   TeacherAssignment[]
   timetableEntries     TimetableEntry[]
+  examTypes            ExamType[]
+  exams                Exam[]
+  examSubjects         ExamSubject[]
+  marksEntries         MarksEntry[]
+  gradeScales          GradeScale[]
+  gradeBands           GradeBand[]
+  examResults          ExamResult[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -161,6 +168,7 @@ model School {
   classes          Class[]
   subjects         Subject[]
   classrooms       Classroom[]
+  examTypes        ExamType[]
 
   // Composite unique alongside the PK — required so AcademicSession can enforce, via a real
   // foreign key, that its (tenantId, schoolId) pair always points to a School actually owned
@@ -207,6 +215,8 @@ model AcademicSession {
   periodConfigurations PeriodConfiguration[]
   teacherAssignments   TeacherAssignment[]
   timetableEntries     TimetableEntry[]
+  exams                Exam[]
+  gradeScales          GradeScale[]
 
   // Added in Sprint 4 alongside @@unique([tenantId, sessionName]): a compound unique so
   // Class/Enrollment can reference AcademicSession via the same composite-FK pattern already
@@ -434,6 +444,8 @@ model Class {
   attendances        StudentAttendance[]
   teacherAssignments TeacherAssignment[]
   timetableEntries   TimetableEntry[]
+  examSubjects       ExamSubject[]
+  examResults        ExamResult[]
 
   // Compound unique alongside the PK — required so Section/Enrollment can enforce, via a real
   // foreign key, that their (tenantId, classId) pair always points to a Class actually owned by
@@ -469,6 +481,7 @@ model Section {
   attendances        StudentAttendance[]
   teacherAssignments TeacherAssignment[]
   timetableEntries   TimetableEntry[]
+  examResults        ExamResult[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, classId, name])
@@ -563,6 +576,8 @@ model Student {
   enrollments      Enrollment[]
   documents        StudentDocument[]
   attendances      StudentAttendance[]
+  marksEntries     MarksEntry[]
+  examResults      ExamResult[]
 
   // Compound unique alongside the PK — required so StudentGuardian/Enrollment can enforce, via
   // a real foreign key, that their (tenantId, studentId) pair always points to a Student
@@ -816,6 +831,7 @@ model Subject {
 
   teacherAssignments TeacherAssignment[]
   timetableEntries   TimetableEntry[]
+  examSubjects       ExamSubject[]
 
   // Compound unique alongside the PK — same composite-FK-target pattern as every other master
   // entity in this schema (School, AcademicSession, Class, Section) — required so
@@ -1119,4 +1135,277 @@ model TimetableEntry {
   @@index([tenantId, teacherId])
   @@index([tenantId, classroomId])
   @@map("timetable_entries")
+}
+
+// --- Phase 7 — Examination & Assessment Management (modules/examinations) ------------------
+
+enum ExamStatus {
+  DRAFT
+  SCHEDULED
+  ONGOING
+  MARKS_ENTRY_COMPLETED
+  RESULT_GENERATED
+  RESULT_PUBLISHED
+}
+
+enum ExamResultStatus {
+  PASS
+  FAIL
+}
+
+// An ExamType is tenant-wide master data (Unit Test, Mid Term, Final, Quarterly) — reused across
+// academic sessions, same as Subject/Classroom, not scoped to one session.
+model ExamType {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  exams    Exam[]
+  school   School? @relation(fields: [schoolId], references: [id])
+  schoolId String? @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("exam_types")
+}
+
+// A GradeScale is a named, selectable percentage-to-grade mapping, scoped to an AcademicSession
+// (a school's grading policy can change year to year, same reasoning as PeriodConfiguration).
+// Named (not a single implicit scale per session) so a tenant can maintain more than one —
+// e.g. a board-specific scale alongside a school-internal one — per the Phase 7 requirement to
+// stay extensible toward board-specific grading without a schema change later. `Exam.gradeScaleId`
+// selects which scale a given exam's results are computed against.
+model GradeScale {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String @default("Default")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  bands GradeBand[]
+  exams Exam[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, academicSessionId, name])
+  @@index([tenantId, academicSessionId])
+  @@map("grade_scales")
+}
+
+// One percentage band within a GradeScale (e.g. 91-100 = "A+"). Ordered and non-overlapping —
+// validated at the service layer with a pure helper mirroring modules/timetable's
+// period-validation.helpers.ts (same shape of problem: an ordered, non-overlapping range list).
+// `gradePoint` is nullable and unused by any service this phase — reserved for future GPA/CGPA
+// computation (Phase 7 requirement to stay extensible) without a later migration.
+model GradeBand {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  gradeScaleId String     @map("grade_scale_id") @db.Uuid
+  gradeScale   GradeScale @relation(fields: [tenantId, gradeScaleId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  minPercentage Float  @map("min_percentage")
+  maxPercentage Float  @map("max_percentage")
+  grade         String
+  gradePoint    Float? @map("grade_point")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, gradeScaleId])
+  @@map("grade_bands")
+}
+
+// An Exam is one actual exam event for an AcademicSession (e.g. "Mid Term 2026"). `status` is
+// the lifecycle gate every other Phase 7 write checks against — see the enum above and each
+// service's own comment for exactly which status each action requires. `gradeScaleId` is
+// nullable: omitted, result generation falls back to the session's "Default"-named GradeScale.
+model Exam {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  examTypeId String   @map("exam_type_id") @db.Uuid
+  examType   ExamType @relation(fields: [tenantId, examTypeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  gradeScaleId String?     @map("grade_scale_id") @db.Uuid
+  gradeScale   GradeScale? @relation(fields: [tenantId, gradeScaleId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name      String
+  startDate DateTime   @map("start_date") @db.Date
+  endDate   DateTime   @map("end_date") @db.Date
+  status    ExamStatus @default(DRAFT)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  examSubjects ExamSubject[]
+  examResults  ExamResult[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, academicSessionId, name])
+  @@index([tenantId, academicSessionId])
+  @@index([tenantId, examTypeId])
+  @@map("exams")
+}
+
+// Which subjects are examined in a given Exam, scoped per Class (not per Section — every
+// section of a class sits the same paper with the same max/passing marks, matching how Subject
+// itself isn't section-scoped either). `maxMarks`/`passingMarks` are Float, not Int, to support
+// half-mark grading schemes some schools use.
+model ExamSubject {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  examId String @map("exam_id") @db.Uuid
+  exam   Exam   @relation(fields: [tenantId, examId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  classId String @map("class_id") @db.Uuid
+  class   Class  @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  subjectId String  @map("subject_id") @db.Uuid
+  subject   Subject @relation(fields: [tenantId, subjectId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  maxMarks     Float @map("max_marks")
+  passingMarks Float @map("passing_marks")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  marksEntries MarksEntry[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, examId, classId, subjectId])
+  @@index([tenantId, examId])
+  @@index([tenantId, classId])
+  @@map("exam_subjects")
+}
+
+// The atomic per-student, per-exam-subject mark. No `deletedAt` — like TeacherAssignment/
+// TimetableEntry, this is a relationship/transactional record, not master data: a correction is
+// an upsert on the natural key (same `markOne` shape as StudentAttendance), never a new row.
+// Whether a correction is still *allowed* is a service-layer check against the parent Exam's
+// status (only while ONGOING — see enter-marks.service.ts), not a schema-level lock; once an
+// Exam moves to MARKS_ENTRY_COMPLETED, these rows are read-only by service-layer convention.
+// `isAbsent` with `marksObtained: null` represents a student who did not sit this paper.
+model MarksEntry {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  examSubjectId String      @map("exam_subject_id") @db.Uuid
+  examSubject   ExamSubject @relation(fields: [tenantId, examSubjectId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  marksObtained Float?
+  isAbsent      Boolean @default(false) @map("is_absent")
+  remarks       String?
+
+  enteredBy String? @map("entered_by") @db.Uuid
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, examSubjectId, studentId])
+  @@index([tenantId, studentId])
+  @@map("marks_entries")
+}
+
+// ExamResult is a GENERATED, IMMUTABLE snapshot — one row per student per Exam, produced by
+// result-generation.service.ts once every ExamSubject's marks are entered, and re-generatable
+// (upsert) only while the parent Exam's status is RESULT_GENERATED, never once it reaches
+// RESULT_PUBLISHED (enforced at the service layer, matching TeacherAssignment/TimetableEntry's
+// own "no deletedAt, correction is a service-gated upsert" shape). No per-subject breakdown is
+// duplicated here — Report Card reads the (by-then read-only) MarksEntry rows directly for that,
+// avoiding a second copy of the same data. `classId`/`sectionId` are denormalized from the
+// student's current Enrollment at generation time, same reasoning as StudentAttendance
+// denormalizing class/section from Enrollment — and are what class-wide/section-wide ranking
+// queries filter on directly. `rank` is computed and stored at generation time (shared rank for
+// ties, e.g. 1, 1, 3), scoped to (examId, classId, sectionId) — "rank in section," the
+// narrower and more common default; a class-wide rank can be added later as a separate read
+// without any schema change, since classId is already present on every row.
+model ExamResult {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  examId String @map("exam_id") @db.Uuid
+  exam   Exam   @relation(fields: [tenantId, examId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  classId   String  @map("class_id") @db.Uuid
+  class     Class   @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+  sectionId String  @map("section_id") @db.Uuid
+  section   Section @relation(fields: [tenantId, sectionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  totalMarksObtained Float            @map("total_marks_obtained")
+  totalMaxMarks      Float            @map("total_max_marks")
+  percentage         Float
+  overallGrade       String?          @map("overall_grade")
+  gradePoint         Float?           @map("grade_point")
+  rank               Int?
+  status             ExamResultStatus
+
+  generatedAt DateTime @default(now()) @map("generated_at") @db.Timestamptz(3)
+  generatedBy String?  @map("generated_by") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, examId, studentId])
+  @@index([tenantId, examId, classId, sectionId])
+  @@map("exam_results")
 }

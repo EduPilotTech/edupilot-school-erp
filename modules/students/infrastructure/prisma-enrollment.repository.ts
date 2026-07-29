@@ -58,6 +58,20 @@ export class PrismaEnrollmentRepository implements EnrollmentRepository {
     return rows.map(toEntity);
   }
 
+  async findCurrentForClass(
+    tenantId: string,
+    classId: string,
+    academicSessionId: string
+  ): Promise<EnrollmentEntity[]> {
+    const rows = await withTenantContext(tenantId, (tx) =>
+      tx.enrollment.findMany({
+        where: { tenantId, classId, academicSessionId, endDate: null },
+        orderBy: { rollNumber: "asc" },
+      })
+    );
+    return rows.map(toEntity);
+  }
+
   async create(
     input: CreateEnrollmentInput,
     tx?: Prisma.TransactionClient
@@ -87,25 +101,30 @@ export class PrismaEnrollmentRepository implements EnrollmentRepository {
     id: string,
     endDate: Date,
     status: EnrollmentStatusValue,
-    updatedBy: string | null
+    updatedBy: string | null,
+    tx?: Prisma.TransactionClient
   ): Promise<EnrollmentEntity> {
     // One transaction, not two: `updateMany` (rather than `update`, since there's no
     // (tenantId, id) compound unique to satisfy `update`'s unique-where requirement) followed
     // by a re-fetch to return the current row — both against `{ id, tenantId }` explicitly, so
     // tenant scoping is never dropped even though `id` alone is already globally unique as the
     // primary key.
-    return withTenantContext(tenantId, async (tx) => {
-      const { count } = await tx.enrollment.updateMany({
-        where: { id, tenantId },
-        data: { endDate, status, updatedBy },
-      });
+    return withTenantContext(
+      tenantId,
+      async (t) => {
+        const { count } = await t.enrollment.updateMany({
+          where: { id, tenantId },
+          data: { endDate, status, updatedBy },
+        });
 
-      if (count === 0) {
-        throw new Error(`Enrollment ${id} not found for tenant ${tenantId}.`);
-      }
+        if (count === 0) {
+          throw new Error(`Enrollment ${id} not found for tenant ${tenantId}.`);
+        }
 
-      const row = await tx.enrollment.findFirstOrThrow({ where: { id, tenantId } });
-      return toEntity(row);
-    });
+        const row = await t.enrollment.findFirstOrThrow({ where: { id, tenantId } });
+        return toEntity(row);
+      },
+      tx
+    );
   }
 }
