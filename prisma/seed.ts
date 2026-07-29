@@ -23,26 +23,154 @@ const SYSTEM_ROLES = [
   { code: "STUDENT", name: "Student", isProtected: false },
 ] as const;
 
-// Only the 9 permission codes actually referenced by working code in this codebase today
-// (modules/users' application services and app/settings/users/actions.ts) — not the
-// illustrative future codes from Sprint 1B's design sketch (student.create, attendance.mark,
-// etc.). Seeding permissions for features that don't exist yet would be seeding ahead of the
-// code, not verifying against it — see Sprint 3 — Step 5 Part C.
-const PERMISSIONS = [
-  { code: "user.invite", resource: "user", action: "invite" },
-  { code: "user.update", resource: "user", action: "update" },
-  { code: "user.suspend", resource: "user", action: "suspend" },
-  { code: "user.activate", resource: "user", action: "activate" },
-  { code: "user.deactivate", resource: "user", action: "deactivate" },
-  { code: "user.delete", resource: "user", action: "delete" },
-  { code: "user.restore", resource: "user", action: "restore" },
-  { code: "role.assign", resource: "role", action: "assign" },
-  { code: "role.remove", resource: "role", action: "remove" },
-] as const;
-
-// Only Super Admin and School Admin hold the current user-management permission set — every
-// other system role is a non-administrative staff/portal role with none of these grants.
+// Only Super Admin and School Admin hold the base admin permission set — every other system
+// role is a non-administrative staff/portal role with none of those grants by default.
 const ADMIN_ROLE_CODES = ["SUPER_ADMIN", "SCHOOL_ADMIN"] as const;
+
+// The 9 permission codes actually referenced by working code in this codebase (modules/users'
+// application services and app/settings/users/actions.ts), the 3 Sprint 4.8A document-management
+// codes, the 2 Sprint 4.9 ID card codes, the 4 Phase 5 attendance codes, and — as of Phase 6 —
+// the 11 timetable-management codes. Every code here still follows the file's original principle
+// (only seed what real code references, or what a task explicitly asks to seed ahead of its
+// code — see Sprint 4.8A's own comment history for that exception).
+//
+// Each entry now carries its own `roles` list rather than every permission going to the same
+// ADMIN_ROLE_CODES set — needed as of Sprint 4.9, whose 3-tier access model
+// (Admin/Office/Teacher-view-only) is the first permission that ISN'T simply "admins only."
+// "Office" maps to the existing RECEPTIONIST role — no "Office" role exists in SYSTEM_ROLES, and
+// none was added; RECEPTIONIST is the closest existing match for front-office staff.
+const PERMISSIONS = [
+  { code: "user.invite", resource: "user", action: "invite", roles: ADMIN_ROLE_CODES },
+  { code: "user.update", resource: "user", action: "update", roles: ADMIN_ROLE_CODES },
+  { code: "user.suspend", resource: "user", action: "suspend", roles: ADMIN_ROLE_CODES },
+  { code: "user.activate", resource: "user", action: "activate", roles: ADMIN_ROLE_CODES },
+  { code: "user.deactivate", resource: "user", action: "deactivate", roles: ADMIN_ROLE_CODES },
+  { code: "user.delete", resource: "user", action: "delete", roles: ADMIN_ROLE_CODES },
+  { code: "user.restore", resource: "user", action: "restore", roles: ADMIN_ROLE_CODES },
+  { code: "role.assign", resource: "role", action: "assign", roles: ADMIN_ROLE_CODES },
+  { code: "role.remove", resource: "role", action: "remove", roles: ADMIN_ROLE_CODES },
+  { code: "student.document.upload", resource: "student.document", action: "upload", roles: ADMIN_ROLE_CODES },
+  { code: "student.document.delete", resource: "student.document", action: "delete", roles: ADMIN_ROLE_CODES },
+  { code: "student.photo.upload", resource: "student.photo", action: "upload", roles: ADMIN_ROLE_CODES },
+  {
+    code: "student.idcard.view",
+    resource: "student.idcard",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "RECEPTIONIST", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "student.idcard.print",
+    resource: "student.idcard",
+    action: "print",
+    roles: [...ADMIN_ROLE_CODES, "RECEPTIONIST"] as const,
+  },
+  // Phase 5 — Attendance Management. Two resources (student vs. teacher attendance), each split
+  // into mark/view so Receptionist can be granted view-only per the task's own 5-tier requirement
+  // ("Receptionist (View Only)"). Teacher/Class Teacher can mark and view STUDENT attendance
+  // (they take daily roll call) but not staff attendance — marking colleagues' attendance is an
+  // admin/Principal-level action, not a teacher one.
+  {
+    code: "attendance.student.mark",
+    resource: "attendance.student",
+    action: "mark",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "attendance.student.view",
+    resource: "attendance.student",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "TEACHER", "CLASS_TEACHER", "RECEPTIONIST"] as const,
+  },
+  {
+    code: "attendance.teacher.mark",
+    resource: "attendance.teacher",
+    action: "mark",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
+  },
+  {
+    code: "attendance.teacher.view",
+    resource: "attendance.teacher",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "RECEPTIONIST"] as const,
+  },
+  // Phase 6 — Timetable Management. Matches the architecture review's approved permission
+  // matrix exactly. "school.config" (not "school-config") keeps every resource name dot-
+  // namespaced, consistent with "student.document"/"attendance.student" above — no hyphenated
+  // resource strings exist anywhere else in this file.
+  {
+    code: "subject.manage",
+    resource: "subject",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "subject.view",
+    resource: "subject",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "classroom.manage",
+    resource: "classroom",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "classroom.view",
+    resource: "classroom",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "teacher.manage",
+    resource: "teacher",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "teacher.view",
+    resource: "teacher",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL"] as const,
+  },
+  {
+    code: "teacher.assignment.manage",
+    resource: "teacher.assignment",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
+  },
+  {
+    code: "school.config.manage",
+    resource: "school.config",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "timetable.manage",
+    resource: "timetable",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL"] as const,
+  },
+  {
+    code: "timetable.view",
+    resource: "timetable",
+    action: "view",
+    roles: [
+      ...ADMIN_ROLE_CODES,
+      "PRINCIPAL",
+      "VICE_PRINCIPAL",
+      "TEACHER",
+      "CLASS_TEACHER",
+      "RECEPTIONIST",
+    ] as const,
+  },
+  {
+    code: "timetable.print",
+    resource: "timetable",
+    action: "print",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "RECEPTIONIST"] as const,
+  },
+] as const;
 
 async function main() {
   for (const role of SYSTEM_ROLES) {
@@ -56,18 +184,16 @@ async function main() {
   for (const permission of PERMISSIONS) {
     await prisma.permission.upsert({
       where: { code: permission.code },
-      create: permission,
+      create: { code: permission.code, resource: permission.resource, action: permission.action },
       update: { resource: permission.resource, action: permission.action },
     });
   }
 
-  for (const roleCode of ADMIN_ROLE_CODES) {
-    const role = await prisma.role.findUniqueOrThrow({ where: { code: roleCode } });
+  for (const permission of PERMISSIONS) {
+    const permissionRow = await prisma.permission.findUniqueOrThrow({ where: { code: permission.code } });
 
-    for (const permission of PERMISSIONS) {
-      const permissionRow = await prisma.permission.findUniqueOrThrow({
-        where: { code: permission.code },
-      });
+    for (const roleCode of permission.roles) {
+      const role = await prisma.role.findUniqueOrThrow({ where: { code: roleCode } });
 
       await prisma.rolePermission.upsert({
         where: { roleId_permissionId: { roleId: role.id, permissionId: permissionRow.id } },

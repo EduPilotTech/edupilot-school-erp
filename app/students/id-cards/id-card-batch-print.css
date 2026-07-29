@@ -1,0 +1,41 @@
+/* Sprint 4.9 — batch print layout: multiple CR80-sized cards (85.6mm x 53.98mm each) arranged on
+   A4 sheets, ready to cut apart after printing. Imported only by
+   app/students/id-cards/page.tsx — same per-route scoping reasoning as
+   app/students/[studentId]/id-card/id-card-print.css. */
+
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #id-card-batch-print-area,
+  #id-card-batch-print-area * {
+    visibility: visible;
+  }
+
+  #id-card-batch-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+  }
+
+  .id-card-batch-page {
+    page-break-after: always;
+    display: grid;
+    grid-template-columns: repeat(2, 85.6mm);
+    gap: 5mm;
+  }
+
+  .id-card-batch-page:last-child {
+    page-break-after: auto;
+  }
+
+  .id-card-screen-only {
+    display: none !important;
+  }
+}

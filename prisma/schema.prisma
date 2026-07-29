@@ -2,10 +2,11 @@
 //
 // Sprint 1A: Core Foundation models — Tenant, School, AcademicSession.
 // Sprint 1B: RBAC models — Role, Permission, RolePermission, UserProfile, UserRole.
+// Sprint 4: Academics models — Class, Section. Student Management models — Student, Guardian,
+// StudentGuardian, Enrollment. Domain/repository layers only this sprint — no application
+// services, UI, or migration yet (see docs/PHASE_STATUS.md).
 // Still no migrations (see docs/PHASE_STATUS.md) and no RLS policies yet — RLS is added in
 // supabase/migrations/ once the first migration exists, per docs/DATABASE_STANDARDS.md §4.
-// ERP business tables (Student, Teacher, Class, Attendance, ...) remain out of scope — see
-// docs/PHASE_STATUS.md for sequencing.
 //
 // See docs/DATABASE_STANDARDS.md for naming, RLS, and migration conventions this schema must
 // follow.
@@ -99,10 +100,26 @@ model Tenant {
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
-  school           School?
-  academicSessions AcademicSession[]
-  roles            Role[]
-  userProfiles     UserProfile[]
+  school               School?
+  academicSessions     AcademicSession[]
+  roles                Role[]
+  userProfiles         UserProfile[]
+  classes              Class[]
+  sections             Section[]
+  students             Student[]
+  guardians            Guardian[]
+  enrollments          Enrollment[]
+  studentDocuments     StudentDocument[]
+  studentAttendances   StudentAttendance[]
+  teacherAttendances   TeacherAttendance[]
+  subjects             Subject[]
+  classrooms           Classroom[]
+  teachers             Teacher[]
+  workingDays          WorkingDay[]
+  holidays             Holiday[]
+  periodConfigurations PeriodConfiguration[]
+  teacherAssignments   TeacherAssignment[]
+  timetableEntries     TimetableEntry[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -141,6 +158,9 @@ model School {
   updatedBy String?   @map("updated_by") @db.Uuid
 
   academicSessions AcademicSession[]
+  classes          Class[]
+  subjects         Subject[]
+  classrooms       Classroom[]
 
   // Composite unique alongside the PK — required so AcademicSession can enforce, via a real
   // foreign key, that its (tenantId, schoolId) pair always points to a School actually owned
@@ -179,6 +199,20 @@ model AcademicSession {
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
+  classes              Class[]
+  enrollments          Enrollment[]
+  attendances          StudentAttendance[]
+  workingDays          WorkingDay[]
+  holidays             Holiday[]
+  periodConfigurations PeriodConfiguration[]
+  teacherAssignments   TeacherAssignment[]
+  timetableEntries     TimetableEntry[]
+
+  // Added in Sprint 4 alongside @@unique([tenantId, sessionName]): a compound unique so
+  // Class/Enrollment can reference AcademicSession via the same composite-FK pattern already
+  // used for School -> Tenant and AcademicSession -> School. Purely additive — no existing
+  // field, relation, or index removed.
+  @@unique([tenantId, id])
   @@unique([tenantId, sessionName])
   @@index([tenantId, isCurrent])
   @@index([schoolId])
@@ -316,7 +350,9 @@ model UserProfile {
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
-  userRoles UserRole[]
+  userRoles          UserRole[]
+  teacherAttendances TeacherAttendance[]
+  teacher            Teacher?
 
   // Compound unique alongside the PK — required so UserRole can enforce, via a real foreign
   // key, that its (tenantId, userId) pair always points to a UserProfile actually owned by
@@ -363,4 +399,724 @@ model UserRole {
   @@index([tenantId, userId])
   @@index([roleId])
   @@map("user_roles")
+}
+
+// --- Academics models (Sprint 4) --------------------------------------------------------------
+
+// A Class is one grade/year group at a School for a specific AcademicSession (e.g. "Grade 5" for
+// 2025-2026) — a new school year means new Class rows, not reusing last year's. Both the School
+// and AcademicSession relations are composite FKs against their own (tenantId, id) compound
+// uniques, following the same pattern AcademicSession -> School already established — plus a
+// direct `tenant` relation, matching every model in this schema regardless of what else already
+// anchors tenantId (see AcademicSession's own precedent).
+model Class {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name  String
+  grade Int?
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  sections           Section[]
+  enrollments        Enrollment[]
+  attendances        StudentAttendance[]
+  teacherAssignments TeacherAssignment[]
+  timetableEntries   TimetableEntry[]
+
+  // Compound unique alongside the PK — required so Section/Enrollment can enforce, via a real
+  // foreign key, that their (tenantId, classId) pair always points to a Class actually owned by
+  // that tenant, mirroring School's own (tenantId, id) compound unique.
+  @@unique([tenantId, id])
+  @@unique([tenantId, academicSessionId, name])
+  @@index([tenantId])
+  @@index([schoolId])
+  @@index([academicSessionId])
+  @@map("classes")
+}
+
+// A Section is a subdivision of a Class (e.g. "Grade 5 - A"). References Class via a composite
+// FK against Class(tenantId, id), same pattern as Class -> School/AcademicSession above.
+model Section {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  classId String @map("class_id") @db.Uuid
+  class   Class  @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name     String
+  capacity Int?
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  enrollments        Enrollment[]
+  attendances        StudentAttendance[]
+  teacherAssignments TeacherAssignment[]
+  timetableEntries   TimetableEntry[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, classId, name])
+  @@index([tenantId])
+  @@index([classId])
+  @@map("sections")
+}
+
+// --- Student Management models (Sprint 4) ------------------------------------------------------
+
+enum StudentStatus {
+  ACTIVE
+  TRANSFERRED
+  GRADUATED
+  WITHDRAWN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum GuardianRelationship {
+  FATHER
+  MOTHER
+  GUARDIAN
+  OTHER
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  TRANSFERRED_OUT
+}
+
+// Sprint 4.8A — Student Document Infrastructure. `PHOTO` is included alongside the certificate
+// types rather than modeled as a separate concept: a student photo is, structurally, just
+// another StudentDocument row (one file, one owner, one storage key) — giving it its own model
+// would duplicate every column here for no behavioral difference. `findPhoto()` on
+// StudentDocumentRepository is what gives "the current photo" its own lookup, not a separate
+// table.
+enum DocumentType {
+  BIRTH_CERTIFICATE
+  TRANSFER_CERTIFICATE
+  MEDICAL_CERTIFICATE
+  CASTE_CERTIFICATE
+  INCOME_CERTIFICATE
+  AADHAAR
+  PHOTO
+  OTHER
+}
+
+// A Student is the core academic record — deliberately independent of UserProfile. Most K-12
+// students, especially younger ones, never need portal login access; linking a Student to a
+// UserProfile (for future student-portal access, per the STUDENT system role seeded in Sprint 3)
+// is explicitly deferred, not built this sprint — no `userProfileId` column exists yet, avoiding
+// any change to the existing UserProfile model for a feature nothing uses today.
+//
+// `dateOfBirth`/`admissionDate` use `@db.Date`, not `@db.Timestamptz(3)` like every audit
+// timestamp elsewhere in this schema — these are calendar dates with no meaningful time-of-day
+// component; `@db.Date` avoids the timezone-conversion ambiguity that could otherwise shift a
+// birthdate across a day boundary depending on the viewer's timezone.
+model Student {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  admissionNumber String   @map("admission_number")
+  firstName       String   @map("first_name")
+  lastName        String   @map("last_name")
+  dateOfBirth     DateTime @map("date_of_birth") @db.Date
+  gender          Gender?
+  photoUrl        String?  @map("photo_url")
+
+  address    String?
+  city       String?
+  state      String?
+  country    String?
+  postalCode String? @map("postal_code")
+
+  admissionDate DateTime      @map("admission_date") @db.Date
+  status        StudentStatus @default(ACTIVE)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  studentGuardians StudentGuardian[]
+  enrollments      Enrollment[]
+  documents        StudentDocument[]
+  attendances      StudentAttendance[]
+
+  // Compound unique alongside the PK — required so StudentGuardian/Enrollment can enforce, via
+  // a real foreign key, that their (tenantId, studentId) pair always points to a Student
+  // actually owned by that tenant.
+  @@unique([tenantId, id])
+  @@unique([tenantId, admissionNumber])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("students")
+}
+
+// A Guardian is a parent/guardian contact record — independent of UserProfile for the same
+// reason as Student (parent-portal access is deferred, not built this sprint).
+model Guardian {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  fullName   String  @map("full_name")
+  phone      String?
+  email      String?
+  occupation String?
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  studentGuardians StudentGuardian[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@index([tenantId, phone])
+  @@index([tenantId, email])
+  @@map("guardians")
+}
+
+// StudentGuardian is a pure many-to-many association — "this Guardian is related to this
+// Student, as X." No direct `tenant` relation (matching UserRole's own precedent for join
+// tables with composite FKs on both sides — the two composite FKs below already fully anchor
+// tenantId's validity). Hard-deleted on unlink, same as UserRole/RolePermission: a link has no
+// independent history worth soft-deleting.
+model StudentGuardian {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  guardianId String   @map("guardian_id") @db.Uuid
+  guardian   Guardian @relation(fields: [tenantId, guardianId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  relationship GuardianRelationship
+  isPrimary    Boolean              @default(false) @map("is_primary")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@unique([studentId, guardianId])
+  @@index([tenantId, studentId])
+  @@index([tenantId, guardianId])
+  @@map("student_guardians")
+}
+
+// An Enrollment ties a Student to one AcademicSession + Class + Section. Append-only with a
+// close-not-edit mutation model: promoting a student, or transferring them between sections
+// mid-year, never edits an existing Enrollment row's classId/sectionId — it sets `endDate`/
+// `status` on the old row (closing it) and creates a new one. A Student can therefore have
+// multiple Enrollment rows within the same AcademicSession (an initial section, then a mid-year
+// transfer) — "current" is derived by finding the row with `endDate IS NULL`, not a separate
+// flag that could drift out of sync. No `deletedAt`: even a data-entry correction is handled by
+// closing the wrong row and creating a correct one, never deleting — a full, honest history
+// including mistakes is the point. The domain/repository layer (this sprint) exposes only
+// `create`/`close` — no generic update — making "never overwrite" structurally hard to violate,
+// not just documented.
+model Enrollment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  classId String @map("class_id") @db.Uuid
+  class   Class  @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  sectionId String  @map("section_id") @db.Uuid
+  section   Section @relation(fields: [tenantId, sectionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  rollNumber String?          @map("roll_number")
+  startDate  DateTime         @map("start_date") @db.Date
+  endDate    DateTime?        @map("end_date") @db.Date
+  status     EnrollmentStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@index([tenantId, studentId])
+  @@index([tenantId, academicSessionId])
+  @@index([classId])
+  @@index([sectionId])
+  @@map("enrollments")
+}
+
+// Sprint 4.8A — infrastructure only (no upload UI/Server Actions/Application Services this
+// step; see docs/PHASE_STATUS.md). One row per uploaded file — a student photo is just a
+// StudentDocument with `documentType = PHOTO`, not a separate model (see DocumentType's
+// comment). No `deletedAt`-independent history concept like Enrollment's "never overwrite" —
+// there is no generic update at all here, only `create` and `softDelete`: "Replace" (a future
+// Sprint 4.8B concern) means soft-deleting the old row and creating a new one, exactly like a
+// promotion is a new Enrollment row, not an edited one. `storageKey` (not a public URL) is
+// what's persisted — the actual signed/public URL is resolved on demand through StorageService,
+// so nothing here is coupled to which storage provider or bucket layout is behind it.
+//
+// No (tenantId, id) compound unique — same reasoning as StudentGuardian: nothing references a
+// StudentDocument via composite FK, so there's nothing for it to back.
+model StudentDocument {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  documentType     DocumentType @map("document_type")
+  originalFileName String       @map("original_file_name")
+  storageKey       String       @map("storage_key")
+  mimeType         String       @map("mime_type")
+  fileSize         Int          @map("file_size")
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(3)
+  uploadedBy String?   @map("uploaded_by") @db.Uuid
+
+  @@index([tenantId])
+  @@index([tenantId, studentId])
+  @@index([tenantId, studentId, documentType])
+  @@map("student_documents")
+}
+
+// Phase 5 — Attendance Management. Shared by both StudentAttendance and TeacherAttendance —
+// one status vocabulary for the whole feature, not two.
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  LEAVE
+}
+
+// One row per student per calendar day — `@@unique([tenantId, studentId, date])` is what makes
+// "one attendance record per student per day" a database guarantee, not just a service-layer
+// check (the same "structurally hard to violate" reasoning as Enrollment's create/close-only
+// design). `academicSessionId`/`classId`/`sectionId` are captured at mark-time rather than
+// resolved from Enrollment on read — a student's class can change mid-year (promotion/transfer),
+// and historical attendance must keep showing the class they were actually in on that date, not
+// whatever their enrollment says today. This mirrors why StudentListItemEntity denormalizes
+// "current" class data rather than joining live every read.
+model StudentAttendance {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  classId String @map("class_id") @db.Uuid
+  class   Class  @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  sectionId String  @map("section_id") @db.Uuid
+  section   Section @relation(fields: [tenantId, sectionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  date    DateTime         @db.Date
+  status  AttendanceStatus
+  remarks String?
+
+  markedBy String? @map("marked_by") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, studentId, date])
+  @@index([tenantId, classId, sectionId, date])
+  @@index([tenantId, academicSessionId, date])
+  @@map("student_attendance")
+}
+
+// Staff attendance — references UserProfile directly rather than a dedicated Teacher entity, per
+// the explicit Phase 5 scoping decision: no Teacher domain module exists yet (only a TEACHER
+// role code), and building one is out of this phase's scope. Works for any staff member, not
+// only those with the TEACHER role — "Teacher Attendance" in practice means "staff attendance."
+model TeacherAttendance {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  userProfileId String      @map("user_profile_id") @db.Uuid
+  userProfile   UserProfile @relation(fields: [tenantId, userProfileId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  date    DateTime         @db.Date
+  status  AttendanceStatus
+  remarks String?
+
+  markedBy String? @map("marked_by") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, userProfileId, date])
+  @@index([tenantId, date])
+  @@map("teacher_attendance")
+}
+
+// --- Phase 6 — Academic Structure Extensions (modules/academics) ---------------------------
+//
+// Subject and Classroom are tenant/school-level master data, deliberately NOT scoped to a
+// specific AcademicSession — unlike Class/Section, which reset every school year, a subject
+// ("Mathematics") or a physical room ("Lab 2") persists across years and is simply reused by a
+// new session's Class/Section/TeacherAssignment rows. Scoping them to School (not AcademicSession)
+// mirrors Class's own School relation.
+
+// A Subject is a teachable subject offered by the school (e.g. "Mathematics", "English").
+model Subject {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  teacherAssignments TeacherAssignment[]
+  timetableEntries   TimetableEntry[]
+
+  // Compound unique alongside the PK — same composite-FK-target pattern as every other master
+  // entity in this schema (School, AcademicSession, Class, Section) — required so
+  // TeacherAssignment/TimetableEntry can enforce, via a real foreign key, that their
+  // (tenantId, subjectId) pair always points to a Subject actually owned by that tenant.
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("subjects")
+}
+
+// A Classroom is a physical room/lab a class can be scheduled into. `classroomId` is nullable on
+// TimetableEntry (not every period needs a fixed room), so Classroom itself carries no special
+// handling beyond that — see TimetableEntry's own comment for the nullable-FK reasoning.
+model Classroom {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name     String
+  code     String
+  capacity Int?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  timetableEntries TimetableEntry[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("classrooms")
+}
+
+// --- Phase 6 — Teacher module (modules/teachers) ------------------------------------------
+//
+// Teacher is a 1:1 extension of UserProfile — per the Phase 6 architecture review's Decision 1,
+// it deliberately does NOT duplicate name/email/phone/avatar (UserProfile remains the single
+// identity record); it only carries teaching-specific metadata. Every future module that needs
+// "a teacher" (Timetable, Examination, Homework, Substitute Teacher, Performance, Payroll) must
+// reference Teacher.id, never UserProfile.id directly — unlike Phase 5's TeacherAttendance, which
+// predates this decision and intentionally still references UserProfile (see its own comment).
+model Teacher {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  userProfileId String      @map("user_profile_id") @db.Uuid
+  userProfile   UserProfile @relation(fields: [tenantId, userProfileId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  employeeCode  String   @map("employee_code")
+  joiningDate   DateTime @map("joining_date") @db.Date
+  qualification String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  assignments      TeacherAssignment[]
+  timetableEntries TimetableEntry[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, userProfileId])
+  @@unique([tenantId, employeeCode])
+  @@index([tenantId])
+  @@map("teachers")
+}
+
+// --- Phase 6 — Timetable Management (modules/timetable) ------------------------------------
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+// Which weekdays are instructional days for a given AcademicSession — a school's working-day
+// pattern can differ year to year (e.g. a session switching from 6-day to 5-day weeks), so this
+// is scoped per session, not tenant-wide. One row per weekday per session (all 7 rows always
+// exist; `isWorking` toggles whether that day is scheduled), rather than only inserting rows for
+// working days — makes "is Sunday a working day for this session" a lookup, not an absence check.
+model WorkingDay {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  dayOfWeek DayOfWeek @map("day_of_week")
+  isWorking Boolean   @default(true) @map("is_working")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, academicSessionId, dayOfWeek])
+  @@index([tenantId, academicSessionId])
+  @@map("working_days")
+}
+
+// A Holiday suspends scheduling for one calendar date within an AcademicSession — used by
+// conflict detection (no TimetableEntry may be scheduled to run "on" a holiday date is a
+// calendar-level, not day-of-week-level, concept, so this stays a separate model from
+// WorkingDay rather than folded into it) and available for future Attendance integration
+// (explicitly NOT built this phase — see architecture review's Risks section).
+model Holiday {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  date DateTime @db.Date
+  name String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, academicSessionId, date])
+  @@index([tenantId, academicSessionId])
+  @@map("holidays")
+}
+
+// The ordered list of periods (including breaks) a session's school day is built from. Break is
+// deliberately NOT a separate model (Phase 6 Decision 3) — it is just a period row with
+// `isBreak: true`; no subject/teacher/TeacherAssignment can ever target a break period (enforced
+// at the service layer when creating a TimetableEntry, since a break period simply won't appear
+// as a selectable slot). `startTime`/`endTime` use `@db.Time` (time-of-day, no date component) —
+// the same "use the precise Postgres type" convention as `dateOfBirth`'s `@db.Date`.
+model PeriodConfiguration {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  periodNumber Int      @map("period_number")
+  startTime    DateTime @map("start_time") @db.Time
+  endTime      DateTime @map("end_time") @db.Time
+  isBreak      Boolean  @default(false) @map("is_break")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  timetableEntries TimetableEntry[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, academicSessionId, periodNumber])
+  @@index([tenantId, academicSessionId])
+  @@map("period_configurations")
+}
+
+// TeacherAssignment is the required intermediate step between Teacher and TimetableEntry (Phase 6
+// Decision 4: "TimetableEntry MUST require an existing TeacherAssignment — do not allow ad-hoc
+// teacher allocation"). Deliberately has NO `deletedAt` — unlike Subject/Classroom/Teacher/
+// WorkingDay/Holiday/PeriodConfiguration (true master data), this is a relationship record in the
+// same category as Enrollment and StudentAttendance (neither of which has `deletedAt` either):
+// its natural key (teacher+subject+class+section+session) is permanently unique for a session by
+// definition, so "unassign" is `isActive: false` on the existing row (upsert-based, mirroring
+// StudentAttendance.markOne), never a new row — preserving the full history for the future
+// workload reporting this decision explicitly calls out, with no soft-delete/partial-index
+// complexity needed since the row is never re-created.
+model TeacherAssignment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  teacherId String  @map("teacher_id") @db.Uuid
+  teacher   Teacher @relation(fields: [tenantId, teacherId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  subjectId String  @map("subject_id") @db.Uuid
+  subject   Subject @relation(fields: [tenantId, subjectId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  classId String @map("class_id") @db.Uuid
+  class   Class  @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  sectionId String  @map("section_id") @db.Uuid
+  section   Section @relation(fields: [tenantId, sectionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  timetableEntries TimetableEntry[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, teacherId, subjectId, classId, sectionId, academicSessionId])
+  @@index([tenantId, teacherId])
+  @@index([tenantId, classId, sectionId])
+  @@map("teacher_assignments")
+}
+
+// The atomic timetable cell: one class/section occupies one classroom (optionally) with one
+// teacher teaching one subject, at one day-of-week + period. Always created FROM an existing
+// TeacherAssignment (Decision 4) — `teacherAssignmentId` is a hard FK that makes "no ad-hoc
+// allocation" a database guarantee, not just a service-layer rule. `academicSessionId`/`classId`/
+// `sectionId`/`subjectId`/`teacherId` are denormalized from that TeacherAssignment at
+// creation-time — same reasoning as StudentAttendance denormalizing class/section from Enrollment
+// (see that model's comment): every conflict-detection unique constraint below needs a direct
+// column to target (Postgres can't build a compound unique through a FK's own referenced
+// columns), and every print/read query (by class, by teacher, by classroom) filters directly
+// without joining through TeacherAssignment.
+//
+// Conflict Detection Strategy (architecture review §K) — three independent database-level
+// guarantees, each backstopping a service-layer pre-check with a real constraint Postgres
+// enforces regardless of what code path wrote the row:
+//   - unique_section_slot:   a section can only be in one place per day+period
+//   - unique_teacher_slot:   a teacher can't be double-booked
+//   - unique_classroom_slot: a classroom can't be double-booked (NULL classroomId rows never
+//                            collide with each other or anything else — Postgres treats NULLs as
+//                            distinct in a unique index, which is exactly "no room assigned, no
+//                            room conflict possible")
+//
+// No `deletedAt` — same reasoning as TeacherAssignment: reassigning a slot is an update to the
+// existing row (or a real delete to clear it entirely), never a new row layered over an old one,
+// so there is no soft-delete/partial-index tension with the three conflict constraints above.
+model TimetableEntry {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  teacherAssignmentId String            @map("teacher_assignment_id") @db.Uuid
+  teacherAssignment   TeacherAssignment @relation(fields: [tenantId, teacherAssignmentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  classId String @map("class_id") @db.Uuid
+  class   Class  @relation(fields: [tenantId, classId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  sectionId String  @map("section_id") @db.Uuid
+  section   Section @relation(fields: [tenantId, sectionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  subjectId String  @map("subject_id") @db.Uuid
+  subject   Subject @relation(fields: [tenantId, subjectId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  teacherId String  @map("teacher_id") @db.Uuid
+  teacher   Teacher @relation(fields: [tenantId, teacherId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  classroomId String?    @map("classroom_id") @db.Uuid
+  classroom   Classroom? @relation(fields: [tenantId, classroomId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  periodId String              @map("period_id") @db.Uuid
+  period   PeriodConfiguration @relation(fields: [tenantId, periodId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  dayOfWeek DayOfWeek @map("day_of_week")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, sectionId, dayOfWeek, periodId], name: "unique_section_slot")
+  @@unique([tenantId, teacherId, dayOfWeek, periodId], name: "unique_teacher_slot")
+  @@unique([tenantId, classroomId, dayOfWeek, periodId], name: "unique_classroom_slot")
+  @@index([tenantId, academicSessionId])
+  @@index([tenantId, teacherId])
+  @@index([tenantId, classroomId])
+  @@map("timetable_entries")
 }

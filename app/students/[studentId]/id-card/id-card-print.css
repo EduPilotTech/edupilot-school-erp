@@ -1,0 +1,38 @@
+/* Sprint 4.9 — single-card print layout (CR80 PVC card size: 85.6mm x 53.98mm). Imported only
+   by app/students/[studentId]/id-card/page.tsx, so this @page rule only takes effect while that
+   route is open — Next.js scopes a route-imported stylesheet to that route's lifetime, it does
+   not leak into printing from other pages in the app. */
+
+@media print {
+  @page {
+    size: 85.6mm 53.98mm;
+    margin: 0;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #id-card-print-area,
+  #id-card-print-area * {
+    visibility: visible;
+  }
+
+  #id-card-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+  }
+
+  .id-card-print-page {
+    page-break-after: always;
+  }
+
+  .id-card-print-page:last-child {
+    page-break-after: auto;
+  }
+
+  .id-card-screen-only {
+    display: none !important;
+  }
+}

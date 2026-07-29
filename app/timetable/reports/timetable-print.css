@@ -1,0 +1,29 @@
+/* Phase 6 — timetable print layout. Imported only by app/timetable/reports/page.tsx, so this
+   @page rule only takes effect while that route is open, same scoping precedent as
+   app/students/[studentId]/id-card/id-card-print.css. */
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #timetable-print-area,
+  #timetable-print-area * {
+    visibility: visible;
+  }
+
+  #timetable-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+  }
+
+  .timetable-screen-only {
+    display: none !important;
+  }
+}
