@@ -35,6 +35,7 @@ export interface FeeInvoiceDTO {
   feeCategoryId: string;
   feeStructureItemId: string | null;
   routeFeeRuleId: string | null;
+  hostelFeeRuleId: string | null;
   installmentPlanId: string | null;
   installmentNumber: number | null;
   appliedConcessionId: string | null;

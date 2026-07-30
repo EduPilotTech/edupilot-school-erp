@@ -29,6 +29,10 @@ const SYSTEM_ROLES = [
   // assignments, daily boarding attendance). Mirrors CASHIER's own precedent: a narrower,
   // module-specific role rather than overloading SCHOOL_ADMIN or an unrelated existing role.
   { code: "TRANSPORT_MANAGER", name: "Transport Manager", isProtected: false },
+  // Phase 11 — day-to-day hostel operations (rooms, beds, student assignment/transfer, daily
+  // attendance, leave approval, visitor register, mess). Mirrors TRANSPORT_MANAGER's own
+  // precedent exactly: a narrower, module-specific role rather than overloading SCHOOL_ADMIN.
+  { code: "HOSTEL_WARDEN", name: "Hostel Warden", isProtected: false },
 ] as const;
 
 // Only Super Admin and School Admin hold the base admin permission set — every other system
@@ -39,9 +43,10 @@ const ADMIN_ROLE_CODES = ["SUPER_ADMIN", "SCHOOL_ADMIN"] as const;
 // application services and app/settings/users/actions.ts), the 3 Sprint 4.8A document-management
 // codes, the 2 Sprint 4.9 ID card codes, the 4 Phase 5 attendance codes, the 11 Phase 6
 // timetable-management codes, the 15 Phase 7 examination-management codes, the 20 Phase 8
-// fee-management-and-billing codes, the Phase 9 parent-portal-and-communication codes, and — as
-// of Phase 10 — the 12 transport-management codes (11 `transport.*` staff-side + 1
-// `parent.transport.view`). Every code here still follows the file's original principle (only
+// fee-management-and-billing codes, the Phase 9 parent-portal-and-communication codes, the
+// Phase 10 transport-management codes (11 `transport.*` staff-side + 1 `parent.transport.view`),
+// and — as of Phase 11 — the 12 hostel-management codes (11 `hostel.*` staff-side + 1
+// `parent.hostel.view`). Every code here still follows the file's original principle (only
 // seed what real code references, or what a task explicitly asks to seed ahead of its code — see
 // Sprint 4.8A's own comment history for that exception).
 //
@@ -660,6 +665,82 @@ const PERMISSIONS = [
   {
     code: "parent.transport.view",
     resource: "parent.transport",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  // Phase 11 — Hostel Management. Manage-type codes go to Admin + the new HOSTEL_WARDEN role;
+  // view/report codes add PRINCIPAL for oversight, mirroring transport.*'s own
+  // ADMIN+TRANSPORT_MANAGER+PRINCIPAL pattern exactly. parent.hostel.view follows the existing
+  // parent.*.view naming convention (PARENT role only).
+  {
+    code: "hostel.manage",
+    resource: "hostel",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN"] as const,
+  },
+  {
+    code: "hostel.room.manage",
+    resource: "hostel.room",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN"] as const,
+  },
+  {
+    code: "hostel.bed.manage",
+    resource: "hostel.bed",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN"] as const,
+  },
+  {
+    code: "hostel.assignment.manage",
+    resource: "hostel.assignment",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN"] as const,
+  },
+  {
+    code: "hostel.attendance.mark",
+    resource: "hostel.attendance",
+    action: "mark",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN"] as const,
+  },
+  {
+    code: "hostel.attendance.view",
+    resource: "hostel.attendance",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN", "PRINCIPAL"] as const,
+  },
+  {
+    code: "hostel.leave.manage",
+    resource: "hostel.leave",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN"] as const,
+  },
+  {
+    code: "hostel.visitor.manage",
+    resource: "hostel.visitor",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN"] as const,
+  },
+  {
+    code: "hostel.mess.manage",
+    resource: "hostel.mess",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN"] as const,
+  },
+  {
+    code: "hostel.fee-rule.manage",
+    resource: "hostel.fee-rule",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN", "ACCOUNTANT"] as const,
+  },
+  {
+    code: "hostel.report.view",
+    resource: "hostel.report",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "HOSTEL_WARDEN", "PRINCIPAL"] as const,
+  },
+  {
+    code: "parent.hostel.view",
+    resource: "parent.hostel",
     action: "view",
     roles: ["PARENT"] as const,
   },

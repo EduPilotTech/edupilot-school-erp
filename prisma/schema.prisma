@@ -159,6 +159,19 @@ model Tenant {
   studentTransportAssignments StudentTransportAssignment[]
   routeFeeRules               RouteFeeRule[]
   transportAttendances        TransportAttendance[]
+  hostels                     Hostel[]
+  hostelBuildings             HostelBuilding[]
+  hostelWings                 HostelWing[]
+  hostelFloors                HostelFloor[]
+  hostelRooms                 HostelRoom[]
+  hostelBeds                  HostelBed[]
+  studentHostelAssignments    StudentHostelAssignment[]
+  hostelAttendances           HostelAttendance[]
+  hostelLeaveRequests         HostelLeaveRequest[]
+  hostelVisitors              HostelVisitor[]
+  messMealPlans               MessMealPlan[]
+  messMeals                   MessMeal[]
+  hostelFeeRules              HostelFeeRule[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -203,6 +216,7 @@ model School {
   examTypes        ExamType[]
   feeCategories    FeeCategory[]
   routes           Route[]
+  hostels          Hostel[]
 
   // Composite unique alongside the PK — required so AcademicSession can enforce, via a real
   // foreign key, that its (tenantId, schoolId) pair always points to a School actually owned
@@ -266,6 +280,9 @@ model AcademicSession {
   vehicleAssignments          VehicleAssignment[]
   studentTransportAssignments StudentTransportAssignment[]
   routeFeeRules               RouteFeeRule[]
+  studentHostelAssignments    StudentHostelAssignment[]
+  hostelAttendances           HostelAttendance[]
+  hostelFeeRules              HostelFeeRule[]
 
   // Added in Sprint 4 alongside @@unique([tenantId, sessionName]): a compound unique so
   // Class/Enrollment can reference AcademicSession via the same composite-FK pattern already
@@ -648,6 +665,10 @@ model Student {
   messageThreads        MessageThread[]
   transportAssignments  StudentTransportAssignment[]
   transportAttendances  TransportAttendance[]
+  hostelAssignments     StudentHostelAssignment[]
+  hostelAttendances     HostelAttendance[]
+  hostelLeaveRequests   HostelLeaveRequest[]
+  hostelVisitors        HostelVisitor[]
 
   // Compound unique alongside the PK — required so StudentGuardian/Enrollment can enforce, via
   // a real foreign key, that their (tenantId, studentId) pair always points to a Student
@@ -1630,6 +1651,7 @@ model FeeCategory {
   concessions    FeeConcession[]
   invoices       FeeInvoice[]
   routeFeeRules  RouteFeeRule[]
+  hostelFeeRules HostelFeeRule[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, code])
@@ -1945,6 +1967,14 @@ model FeeInvoice {
   routeFeeRuleId String?       @map("route_fee_rule_id") @db.Uuid
   routeFeeRule   RouteFeeRule? @relation(fields: [tenantId, routeFeeRuleId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
 
+  // Phase 11 — set only for hostel-billing invoices generated from a HostelFeeRule (see
+  // generateHostelMonthlyInvoices / generateHostelOneTimeInvoice). Mirrors routeFeeRuleId's
+  // shape exactly, just keyed by hostel+roomType instead of route. A single invoice still has at
+  // most one of feeStructureItemId/routeFeeRuleId/hostelFeeRuleId set — a student can be on
+  // transport AND in a hostel, but each invoice bills exactly one fee source.
+  hostelFeeRuleId String?        @map("hostel_fee_rule_id") @db.Uuid
+  hostelFeeRule   HostelFeeRule? @relation(fields: [tenantId, hostelFeeRuleId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
   installmentPlanId String?          @map("installment_plan_id") @db.Uuid
   installmentPlan   InstallmentPlan? @relation(fields: [tenantId, installmentPlanId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
   installmentNumber Int?             @map("installment_number")
@@ -1984,11 +2014,15 @@ model FeeInvoice {
   // real DB guarantee for the route-keyed case (inert for tuition rows, where routeFeeRuleId is
   // always NULL).
   @@unique([tenantId, studentId, routeFeeRuleId, billingPeriod])
+  // Phase 11 — the hostel analogue of the routeFeeRuleId uniqueness guard above, same NULL-is-
+  // distinct reasoning (inert for tuition/transport rows, where hostelFeeRuleId is always NULL).
+  @@unique([tenantId, studentId, hostelFeeRuleId, billingPeriod])
   @@index([tenantId, studentId])
   @@index([tenantId, classId, status])
   @@index([tenantId, academicSessionId, status])
   @@index([tenantId, dueDate])
   @@index([tenantId, routeFeeRuleId])
+  @@index([tenantId, hostelFeeRuleId])
   @@map("fee_invoices")
 }
 
@@ -2912,4 +2946,541 @@ model TransportAttendance {
   @@index([tenantId, vehicleId, date])
   @@index([tenantId, studentTransportAssignmentId])
   @@map("transport_attendance")
+}
+
+// --- Phase 11 — Hostel Management (modules/hostel) ------------------------------------------
+//
+// Key shape decisions:
+//   - Hostel -> HostelBuilding -> {HostelFloor, HostelWing} -> HostelRoom -> HostelBed is
+//     reusable, session-independent master data (mirrors Route/RouteStop's own precedent from
+//     Phase 10) — a building's floors and wings persist across academic sessions; only the
+//     student assignment changes year to year. Wing is a building-level grouping a Room may
+//     optionally sit within (not every hostel has wings), so HostelRoom.wingId is nullable while
+//     HostelRoom.floorId is required.
+//   - StudentHostelAssignment is APPEND-ONLY with a close-not-edit mutation model, deliberately
+//     mirroring Enrollment (not StudentTransportAssignment's upsert shape) — this phase explicitly
+//     asks for Transfer and History, and Enrollment's own "close the old row, create a new one"
+//     pattern is what makes a transfer's history a structural fact instead of an overwritten
+//     value. "Current" is the row with `checkOutDate IS NULL`, the same derivation Enrollment
+//     uses for `endDate IS NULL` — no separate flag that could drift out of sync.
+//   - HostelBed carries a live `status` (AVAILABLE/OCCUPIED/MAINTENANCE/BLOCKED) maintained
+//     transactionally by the assignment/transfer/check-out services, not derived at read time —
+//     this directly serves the "Vacant Beds" report (requirement 12) as an indexed lookup rather
+//     than a live join across every assignment, mirroring how FeeInvoice.status is maintained
+//     transactionally by applyPayment rather than recomputed on every read (Phase 8 precedent).
+//   - HostelAttendance mirrors StudentAttendance/TransportAttendance's exact shape (one row per
+//     student per day per session-leg, roomId/bedId denormalized at mark-time so a mid-session
+//     room transfer never rewrites past attendance), split by `session` (MORNING/NIGHT) instead
+//     of tripLeg.
+//   - HostelLeaveRequest is a plain request/approve/reject workflow — no separate audit-log table
+//     (unlike Fee's FeeAuditLog, which Phase 8 explicitly mandated); `approvedBy`/`approvedAt` on
+//     the row itself is sufficient given this phase's scope, matching the lighter-weight
+//     precedent already used throughout Attendance/Transport rather than duplicating Fee's own
+//     heavier audit-log machinery where nothing asked for it.
+//   - Hostel Fee Integration (reuse Phase 8 exactly, mirroring Phase 10 Decision 1): HostelFeeRule
+//     is the hostel analogue of RouteFeeRule, keyed by (hostel, roomType, session, feeCategory)
+//     since hostel/mess fees typically vary by room type, not by individual room. FeeInvoice
+//     gained a third nullable `hostelFeeRuleId` (added above, see FeeInvoice) — a Hostel Fee, Mess
+//     Fee, Security Deposit, or Fine is a real FeeInvoice row, reusing 100% of the Phase 8
+//     collection/reversal/ledger/receipt/report pipeline. Two generation paths mirror Phase 8's
+//     own split exactly: `generateHostelMonthlyInvoices` (bulk, MONTHLY rules — Hostel Fee, Mess
+//     Fee) and `generateHostelOneTimeInvoice` (single-student, ONE_TIME rules — Security Deposit,
+//     Fine), the direct hostel counterparts of generateMonthlyInvoices and generateOneTimeInvoice.
+//     No new Invoice/Receipt/Payment/Ledger model — none created here.
+
+enum HostelType {
+  BOYS
+  GIRLS
+  CO_ED
+}
+
+enum RoomType {
+  SINGLE
+  DOUBLE
+  TRIPLE
+  DORMITORY
+  OTHER
+}
+
+enum RoomGenderType {
+  BOYS
+  GIRLS
+  CO_ED
+}
+
+// Decision (mirrors Vehicle's own Decision 7 precedent) — operationally distinct states, not a
+// plain isActive boolean.
+enum RoomStatus {
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+}
+
+enum BedStatus {
+  AVAILABLE
+  OCCUPIED
+  MAINTENANCE
+  BLOCKED
+}
+
+enum HostelAssignmentStatus {
+  ACTIVE
+  TRANSFERRED
+  CHECKED_OUT
+}
+
+enum HostelAttendanceSession {
+  MORNING
+  NIGHT
+}
+
+enum HostelAttendanceStatus {
+  PRESENT
+  ABSENT
+  ON_LEAVE
+}
+
+enum HostelLeaveType {
+  REGULAR
+  EMERGENCY
+  WEEKEND
+}
+
+enum HostelLeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum DietType {
+  VEG
+  NON_VEG
+  JAIN
+  VEGAN
+  OTHER
+}
+
+enum MealType {
+  BREAKFAST
+  LUNCH
+  SNACKS
+  DINNER
+}
+
+// School-scoped, session-independent master data — the hostel's top-level property record.
+model Hostel {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name    String
+  code    String
+  type    HostelType
+  address String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  buildings      HostelBuilding[]
+  mealPlans      MessMealPlan[]
+  hostelFeeRules HostelFeeRule[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("hostels")
+}
+
+model HostelBuilding {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  hostelId String @map("hostel_id") @db.Uuid
+  hostel   Hostel @relation(fields: [tenantId, hostelId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  floors HostelFloor[]
+  wings  HostelWing[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, hostelId, code])
+  @@index([tenantId, hostelId])
+  @@map("hostel_buildings")
+}
+
+model HostelFloor {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  buildingId String         @map("building_id") @db.Uuid
+  building   HostelBuilding @relation(fields: [tenantId, buildingId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name        String
+  floorNumber Int    @map("floor_number")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  rooms HostelRoom[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, buildingId, floorNumber])
+  @@index([tenantId, buildingId])
+  @@map("hostel_floors")
+}
+
+// A building-level grouping a Room may optionally sit within — not every hostel has wings, so
+// HostelRoom.wingId is nullable (unlike floorId, which every room must have).
+model HostelWing {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  buildingId String         @map("building_id") @db.Uuid
+  building   HostelBuilding @relation(fields: [tenantId, buildingId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  rooms HostelRoom[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, buildingId, name])
+  @@index([tenantId, buildingId])
+  @@map("hostel_wings")
+}
+
+model HostelRoom {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  floorId String      @map("floor_id") @db.Uuid
+  floor   HostelFloor @relation(fields: [tenantId, floorId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  wingId String?     @map("wing_id") @db.Uuid
+  wing   HostelWing? @relation(fields: [tenantId, wingId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  roomNumber String         @map("room_number")
+  roomType   RoomType       @map("room_type")
+  capacity   Int
+  gender     RoomGenderType
+
+  status RoomStatus @default(ACTIVE)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  beds               HostelBed[]
+  studentAssignments StudentHostelAssignment[]
+  attendances        HostelAttendance[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, floorId, roomNumber])
+  @@index([tenantId, floorId])
+  @@index([tenantId, wingId])
+  @@index([tenantId, status])
+  @@map("hostel_rooms")
+}
+
+// Decision — `status` is maintained transactionally by the assignment/transfer/check-out
+// services (never derived at read time), directly serving the Vacant Beds report as an indexed
+// lookup.
+model HostelBed {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  roomId String     @map("room_id") @db.Uuid
+  room   HostelRoom @relation(fields: [tenantId, roomId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  bedNumber String    @map("bed_number")
+  status    BedStatus @default(AVAILABLE)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  studentAssignments StudentHostelAssignment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, roomId, bedNumber])
+  @@index([tenantId, roomId])
+  @@index([tenantId, status])
+  @@map("hostel_beds")
+}
+
+// Append-only, close-not-edit — deliberately mirrors Enrollment, not StudentTransportAssignment
+// (see this section's header comment). A transfer closes the current row (`checkOutDate` +
+// `status=TRANSFERRED`) and creates a new one; "current" is the row with `checkOutDate IS NULL`.
+model StudentHostelAssignment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  roomId String     @map("room_id") @db.Uuid
+  room   HostelRoom @relation(fields: [tenantId, roomId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  bedId String    @map("bed_id") @db.Uuid
+  bed   HostelBed @relation(fields: [tenantId, bedId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  dietPreference DietType? @map("diet_preference")
+
+  checkInDate  DateTime               @map("check_in_date") @db.Date
+  checkOutDate DateTime?              @map("check_out_date") @db.Date
+  status       HostelAssignmentStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  attendances   HostelAttendance[]
+  leaveRequests HostelLeaveRequest[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, studentId, academicSessionId])
+  @@index([tenantId, roomId])
+  @@index([tenantId, bedId])
+  @@index([tenantId, studentId, checkOutDate])
+  @@map("student_hostel_assignments")
+}
+
+// Mirrors StudentAttendance/TransportAttendance's exact shape — one row per student per day per
+// session-leg, roomId/bedId denormalized at mark-time.
+model HostelAttendance {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  studentHostelAssignmentId String                  @map("student_hostel_assignment_id") @db.Uuid
+  studentHostelAssignment   StudentHostelAssignment @relation(fields: [tenantId, studentHostelAssignmentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  roomId String     @map("room_id") @db.Uuid
+  room   HostelRoom @relation(fields: [tenantId, roomId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  date    DateTime                @db.Date
+  session HostelAttendanceSession
+  status  HostelAttendanceStatus
+
+  remarks  String?
+  markedBy String? @map("marked_by") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, studentId, date, session])
+  @@index([tenantId, roomId, date])
+  @@index([tenantId, academicSessionId, date])
+  @@index([tenantId, studentHostelAssignmentId])
+  @@map("hostel_attendance")
+}
+
+// A plain request/approve/reject workflow — no separate audit-log table (see header comment).
+model HostelLeaveRequest {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentHostelAssignmentId String                  @map("student_hostel_assignment_id") @db.Uuid
+  studentHostelAssignment   StudentHostelAssignment @relation(fields: [tenantId, studentHostelAssignmentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  leaveType HostelLeaveType @map("leave_type")
+  fromDate  DateTime        @map("from_date") @db.Date
+  toDate    DateTime        @map("to_date") @db.Date
+  reason    String
+
+  status HostelLeaveStatus @default(PENDING)
+
+  approvedBy       String?   @map("approved_by") @db.Uuid
+  approvedAt       DateTime? @map("approved_at") @db.Timestamptz(3)
+  rejectionReason  String?   @map("rejection_reason")
+  actualReturnDate DateTime? @map("actual_return_date") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, studentId, status])
+  @@index([tenantId, status, fromDate])
+  @@index([tenantId, studentHostelAssignmentId])
+  @@map("hostel_leave_requests")
+}
+
+// A simple entry/exit log — append-on-entry, updated once on exit. Not linked to a specific
+// StudentHostelAssignment (a visitor visits a student, not a bed) so it survives a mid-session
+// room transfer without needing correction.
+model HostelVisitor {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  studentId String  @map("student_id") @db.Uuid
+  student   Student @relation(fields: [tenantId, studentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  visitorName String @map("visitor_name")
+  relation    String
+  purpose     String
+
+  entryTime DateTime  @map("entry_time") @db.Timestamptz(3)
+  exitTime  DateTime? @map("exit_time") @db.Timestamptz(3)
+
+  approvedBy String? @map("approved_by") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, studentId, entryTime])
+  @@index([tenantId, entryTime])
+  @@map("hostel_visitors")
+}
+
+// Basic Mess Management — a named plan (e.g. "Standard Plan") containing meal items. No
+// per-student consumption tracking this phase, matching the requirement's own "(Basic)" scoping.
+model MessMealPlan {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  hostelId String @map("hostel_id") @db.Uuid
+  hostel   Hostel @relation(fields: [tenantId, hostelId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name        String
+  description String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  meals MessMeal[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, hostelId, name])
+  @@index([tenantId, hostelId])
+  @@map("mess_meal_plans")
+}
+
+// The item within a MessMealPlan — mirrors FeeStructureItem's "item under a container" shape.
+model MessMeal {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  mealPlanId String       @map("meal_plan_id") @db.Uuid
+  mealPlan   MessMealPlan @relation(fields: [tenantId, mealPlanId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  mealType    MealType @map("meal_type")
+  dietType    DietType @map("diet_type")
+  description String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, mealPlanId, mealType, dietType])
+  @@index([tenantId, mealPlanId])
+  @@map("mess_meals")
+}
+
+// The hostel analogue of RouteFeeRule — amount keyed by (Hostel, RoomType) instead of Route,
+// since hostel/mess fees typically vary by room type. Billing generation reads this to create
+// real FeeInvoice rows (see FeeInvoice.hostelFeeRuleId above).
+model HostelFeeRule {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  hostelId String @map("hostel_id") @db.Uuid
+  hostel   Hostel @relation(fields: [tenantId, hostelId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  roomType RoomType @map("room_type")
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  feeCategoryId String      @map("fee_category_id") @db.Uuid
+  feeCategory   FeeCategory @relation(fields: [tenantId, feeCategoryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  amount    Decimal      @db.Decimal(12, 2)
+  frequency FeeFrequency
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  invoices FeeInvoice[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, hostelId, roomType, academicSessionId, feeCategoryId])
+  @@index([tenantId, academicSessionId])
+  @@map("hostel_fee_rules")
 }

@@ -170,6 +170,9 @@ export default async function ParentDashboardPage({ searchParams }: ParentDashbo
         <Link href={`/parent/students/${studentId}/transport`} className="text-blue-600 hover:underline">
           Transport
         </Link>
+        <Link href={`/parent/students/${studentId}/hostel`} className="text-blue-600 hover:underline">
+          Hostel
+        </Link>
         <Link href="/parent/messages" className="text-blue-600 hover:underline">
           Messages
         </Link>

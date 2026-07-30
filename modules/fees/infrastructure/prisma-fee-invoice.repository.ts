@@ -18,6 +18,7 @@ function toEntity(row: PrismaFeeInvoice): FeeInvoiceEntity {
     feeCategoryId: row.feeCategoryId,
     feeStructureItemId: row.feeStructureItemId,
     routeFeeRuleId: row.routeFeeRuleId,
+    hostelFeeRuleId: row.hostelFeeRuleId,
     installmentPlanId: row.installmentPlanId,
     installmentNumber: row.installmentNumber,
     appliedConcessionId: row.appliedConcessionId,
@@ -98,6 +99,27 @@ export class PrismaFeeInvoiceRepository implements FeeInvoiceRepository {
     return row ? toEntity(row) : null;
   }
 
+  async findByStudentAndHostelFeeRuleAndPeriod(
+    tenantId: string,
+    studentId: string,
+    hostelFeeRuleId: string,
+    billingPeriod: string
+  ): Promise<FeeInvoiceEntity | null> {
+    const row = await withTenantContext(tenantId, (tx) =>
+      tx.feeInvoice.findUnique({
+        where: {
+          tenantId_studentId_hostelFeeRuleId_billingPeriod: {
+            tenantId,
+            studentId,
+            hostelFeeRuleId,
+            billingPeriod,
+          },
+        },
+      })
+    );
+    return row ? toEntity(row) : null;
+  }
+
   async findByStudent(tenantId: string, studentId: string, academicSessionId: string): Promise<FeeInvoiceEntity[]> {
     const rows = await withTenantContext(tenantId, (tx) =>
       tx.feeInvoice.findMany({
@@ -146,6 +168,7 @@ export class PrismaFeeInvoiceRepository implements FeeInvoiceRepository {
             feeCategoryId: input.feeCategoryId,
             feeStructureItemId: input.feeStructureItemId ?? null,
             routeFeeRuleId: input.routeFeeRuleId ?? null,
+            hostelFeeRuleId: input.hostelFeeRuleId ?? null,
             installmentPlanId: input.installmentPlanId ?? null,
             installmentNumber: input.installmentNumber ?? null,
             appliedConcessionId: input.appliedConcessionId ?? null,

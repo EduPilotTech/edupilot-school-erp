@@ -7,10 +7,12 @@ export interface CreateFeeInvoiceInput {
   academicSessionId: string;
   classId: string;
   feeCategoryId: string;
-  // Phase 10 Decision 1: exactly one of these two is set — feeStructureItemId for tuition/
-  // exam-type invoices, routeFeeRuleId for transport invoices generated from a RouteFeeRule.
+  // Phase 10 Decision 1 (extended by Phase 11): exactly one of these three is set —
+  // feeStructureItemId for tuition/exam-type invoices, routeFeeRuleId for transport invoices,
+  // hostelFeeRuleId for hostel invoices generated from a HostelFeeRule.
   feeStructureItemId?: string | null;
   routeFeeRuleId?: string | null;
+  hostelFeeRuleId?: string | null;
   installmentPlanId?: string | null;
   installmentNumber?: number | null;
   appliedConcessionId?: string | null;
@@ -47,6 +49,14 @@ export interface FeeInvoiceRepository {
     tenantId: string,
     studentId: string,
     routeFeeRuleId: string,
+    billingPeriod: string
+  ): Promise<FeeInvoiceEntity | null>;
+  // Phase 11 — the hostel-billing analogue, used by generateHostelMonthlyInvoices/
+  // generateHostelOneTimeInvoice for the same idempotency check.
+  findByStudentAndHostelFeeRuleAndPeriod(
+    tenantId: string,
+    studentId: string,
+    hostelFeeRuleId: string,
     billingPeriod: string
   ): Promise<FeeInvoiceEntity | null>;
   findByStudent(tenantId: string, studentId: string, academicSessionId: string): Promise<FeeInvoiceEntity[]>;
