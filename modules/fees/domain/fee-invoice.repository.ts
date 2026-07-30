@@ -7,12 +7,14 @@ export interface CreateFeeInvoiceInput {
   academicSessionId: string;
   classId: string;
   feeCategoryId: string;
-  // Phase 10 Decision 1 (extended by Phase 11): exactly one of these three is set —
+  // Phase 10 Decision 1 (extended by Phase 11, Phase 12): exactly one of these four is set —
   // feeStructureItemId for tuition/exam-type invoices, routeFeeRuleId for transport invoices,
-  // hostelFeeRuleId for hostel invoices generated from a HostelFeeRule.
+  // hostelFeeRuleId for hostel invoices generated from a HostelFeeRule, bookIssueId for a
+  // library fine invoice generated from a specific BookIssue incident.
   feeStructureItemId?: string | null;
   routeFeeRuleId?: string | null;
   hostelFeeRuleId?: string | null;
+  bookIssueId?: string | null;
   installmentPlanId?: string | null;
   installmentNumber?: number | null;
   appliedConcessionId?: string | null;
@@ -59,6 +61,10 @@ export interface FeeInvoiceRepository {
     hostelFeeRuleId: string,
     billingPeriod: string
   ): Promise<FeeInvoiceEntity | null>;
+  // Phase 12 — at most one fine invoice per BookIssue incident (no billing period to key off of,
+  // unlike the period-keyed lookups above), used by generateLibraryFineInvoice for the same
+  // "already generated, don't duplicate" idempotency check.
+  findByBookIssue(tenantId: string, bookIssueId: string): Promise<FeeInvoiceEntity | null>;
   findByStudent(tenantId: string, studentId: string, academicSessionId: string): Promise<FeeInvoiceEntity[]>;
   findMany(tenantId: string, filter: FeeInvoiceListFilter): Promise<FeeInvoiceEntity[]>;
   findOutstandingByStudent(tenantId: string, studentId: string): Promise<FeeInvoiceEntity[]>;

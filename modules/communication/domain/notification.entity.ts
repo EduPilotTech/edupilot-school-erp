@@ -6,7 +6,8 @@ export type NotificationTypeValue =
   | "MESSAGE"
   | "EXAM_RESULT"
   | "CALENDAR_EVENT"
-  | "TRANSPORT_ALERT";
+  | "TRANSPORT_ALERT"
+  | "LIBRARY_ALERT";
 
 export type NotificationPriorityValue = "LOW" | "NORMAL" | "HIGH" | "URGENT";
 

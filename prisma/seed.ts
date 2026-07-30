@@ -45,8 +45,9 @@ const ADMIN_ROLE_CODES = ["SUPER_ADMIN", "SCHOOL_ADMIN"] as const;
 // timetable-management codes, the 15 Phase 7 examination-management codes, the 20 Phase 8
 // fee-management-and-billing codes, the Phase 9 parent-portal-and-communication codes, the
 // Phase 10 transport-management codes (11 `transport.*` staff-side + 1 `parent.transport.view`),
-// and — as of Phase 11 — the 12 hostel-management codes (11 `hostel.*` staff-side + 1
-// `parent.hostel.view`). Every code here still follows the file's original principle (only
+// the Phase 11 hostel-management codes (11 `hostel.*` staff-side + 1 `parent.hostel.view`), and —
+// as of Phase 12 — the 8 library-management codes (7 `library.*` staff-side + 1
+// `parent.library.view`). Every code here still follows the file's original principle (only
 // seed what real code references, or what a task explicitly asks to seed ahead of its code — see
 // Sprint 4.8A's own comment history for that exception).
 //
@@ -741,6 +742,59 @@ const PERMISSIONS = [
   {
     code: "parent.hostel.view",
     resource: "parent.hostel",
+    action: "view",
+    roles: ["PARENT"] as const,
+  },
+  // Phase 12 — Library Management. Manage-type codes go to Admin + the existing LIBRARIAN role
+  // (seeded since Phase 1, unused until now); library.fine.manage also adds ACCOUNTANT, mirroring
+  // hostel.fee-rule.manage's own precedent since generating/waiving a fine invoice is a
+  // fee-collection-adjacent action. library.report.view adds PRINCIPAL for oversight.
+  // parent.library.view follows the existing parent.*.view naming convention (PARENT role only).
+  {
+    code: "library.manage",
+    resource: "library",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "LIBRARIAN"] as const,
+  },
+  {
+    code: "library.catalog.manage",
+    resource: "library.catalog",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "LIBRARIAN"] as const,
+  },
+  {
+    code: "library.inventory.manage",
+    resource: "library.inventory",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "LIBRARIAN"] as const,
+  },
+  {
+    code: "library.circulation.manage",
+    resource: "library.circulation",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "LIBRARIAN"] as const,
+  },
+  {
+    code: "library.reservation.manage",
+    resource: "library.reservation",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "LIBRARIAN"] as const,
+  },
+  {
+    code: "library.fine.manage",
+    resource: "library.fine",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "LIBRARIAN", "ACCOUNTANT"] as const,
+  },
+  {
+    code: "library.report.view",
+    resource: "library.report",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "LIBRARIAN", "PRINCIPAL"] as const,
+  },
+  {
+    code: "parent.library.view",
+    resource: "parent.library",
     action: "view",
     roles: ["PARENT"] as const,
   },

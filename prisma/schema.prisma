@@ -172,6 +172,17 @@ model Tenant {
   messMealPlans               MessMealPlan[]
   messMeals                   MessMeal[]
   hostelFeeRules              HostelFeeRule[]
+  libraries                   Library[]
+  librarySettings             LibrarySettings[]
+  bookCategories              BookCategory[]
+  authors                     Author[]
+  publishers                  Publisher[]
+  books                       Book[]
+  racks                       Rack[]
+  shelves                     Shelf[]
+  bookCopies                  BookCopy[]
+  bookIssues                  BookIssue[]
+  bookReservations            BookReservation[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -217,6 +228,10 @@ model School {
   feeCategories    FeeCategory[]
   routes           Route[]
   hostels          Hostel[]
+  libraries        Library[]
+  bookCategories   BookCategory[]
+  authors          Author[]
+  publishers       Publisher[]
 
   // Composite unique alongside the PK — required so AcademicSession can enforce, via a real
   // foreign key, that its (tenantId, schoolId) pair always points to a School actually owned
@@ -936,6 +951,7 @@ model Subject {
   timetableEntries   TimetableEntry[]
   examSubjects       ExamSubject[]
   homework           Homework[]
+  books              Book[]
 
   // Compound unique alongside the PK — same composite-FK-target pattern as every other master
   // entity in this schema (School, AcademicSession, Class, Section) — required so
@@ -1975,6 +1991,18 @@ model FeeInvoice {
   hostelFeeRuleId String?        @map("hostel_fee_rule_id") @db.Uuid
   hostelFeeRule   HostelFeeRule? @relation(fields: [tenantId, hostelFeeRuleId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
 
+  // Phase 12 — set only for a library fine invoice generated from a specific BookIssue incident
+  // (see generateLibraryFineInvoice). Unlike routeFeeRuleId/hostelFeeRuleId, this points at the
+  // incident itself rather than a standing rate-rule row: a library fine is always tied to one
+  // particular overdue return, lost copy, or damaged copy, never a recurring per-period charge,
+  // so there is no "LibraryFeeRule" master table to key off of — the minimum Fee integration this
+  // phase needs. Only ever set for STUDENT members: FeeInvoice.studentId is a required column
+  // (see below), so a Teacher/Staff library fine cannot become a FeeInvoice without a breaking
+  // change to that column — out of scope per "never redesign previous phases." Teacher/Staff
+  // fines are tracked directly on BookIssue instead (see that model's own comment).
+  bookIssueId String?    @map("book_issue_id") @db.Uuid
+  bookIssue   BookIssue? @relation(fields: [tenantId, bookIssueId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
   installmentPlanId String?          @map("installment_plan_id") @db.Uuid
   installmentPlan   InstallmentPlan? @relation(fields: [tenantId, installmentPlanId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
   installmentNumber Int?             @map("installment_number")
@@ -2017,12 +2045,16 @@ model FeeInvoice {
   // Phase 11 — the hostel analogue of the routeFeeRuleId uniqueness guard above, same NULL-is-
   // distinct reasoning (inert for tuition/transport rows, where hostelFeeRuleId is always NULL).
   @@unique([tenantId, studentId, hostelFeeRuleId, billingPeriod])
+  // Phase 12 — at most one fine invoice per BookIssue incident (unlike the period-keyed
+  // constraints above, a library fine has no billing period to key off of).
+  @@unique([tenantId, bookIssueId])
   @@index([tenantId, studentId])
   @@index([tenantId, classId, status])
   @@index([tenantId, academicSessionId, status])
   @@index([tenantId, dueDate])
   @@index([tenantId, routeFeeRuleId])
   @@index([tenantId, hostelFeeRuleId])
+  @@index([tenantId, bookIssueId])
   @@map("fee_invoices")
 }
 
@@ -2220,6 +2252,10 @@ enum NotificationType {
   EXAM_RESULT
   CALENDAR_EVENT
   TRANSPORT_ALERT
+  // Phase 12 — Issue/Return/Reservation Available/generic Library Alert notifications. Mirrors
+  // TRANSPORT_ALERT's own precedent: none of the existing types fit cleanly, so a new one is
+  // added rather than overloading NOTICE.
+  LIBRARY_ALERT
 }
 
 enum NotificationPriority {
@@ -3483,4 +3519,458 @@ model HostelFeeRule {
   @@unique([tenantId, hostelId, roomType, academicSessionId, feeCategoryId])
   @@index([tenantId, academicSessionId])
   @@map("hostel_fee_rules")
+}
+
+// --- Phase 12 — Library Management (modules/library) -----------------------------------------
+//
+// Key shape decisions (see the approved Phase 12 architecture review for full rationale):
+//   - Library is school-scoped, session-independent master data (mirrors Hostel/Route), and
+//     explicitly supports multiple rows per school (multi-branch), unlike a single School-per-
+//     Tenant. LibrarySettings is a one-row-per-Library config table (mirrors PeriodConfiguration's
+//     own settings-table shape).
+//   - Book (bibliographic/title record) -> BookCopy (physical/holdings record) is the standard
+//     container/item split already used elsewhere (FeeStructure/FeeStructureItem,
+//     MessMealPlan/MessMeal). BookCategory/Author/Publisher are school-wide catalog lookups, not
+//     scoped to one Library branch, since the same author/publisher/category applies regardless
+//     of which branch holds a given copy. Book.academicSubjectId is an OPTIONAL link to the
+//     existing (Phase 6) Subject — only for curriculum-aligned textbooks — deliberately NOT the
+//     primary classification, since a library "Fiction"/"Biography" category is a different
+//     vocabulary than a curriculum subject.
+//   - Rack -> Shelf is a deliberately shallow two-level physical location under Library — the
+//     requirement never asked for a Building/Floor equivalent the way Hostel needed one.
+//   - Membership reuses Student/Teacher/UserProfile directly — no new member table. BookIssue and
+//     BookReservation carry `memberType` (STUDENT/TEACHER/STAFF) + an unconstrained `memberId`
+//     UUID, validated against the correct table by the application layer depending on
+//     `memberType`. This mirrors the polymorphic reference pattern already established by
+//     FeeLedgerEntry.referenceType/referenceId and Notification.referenceType/referenceId — the
+//     only way to satisfy "reuse Student/Teacher/Staff, no duplicate member table" given there is
+//     no generic Staff entity in this schema (non-teaching staff are bare UserProfile rows).
+//   - BookIssue is APPEND-ONLY, mirroring StudentHostelAssignment: one row per loan episode,
+//     closed (status + returnDate) on return, never edited into a new "issue." Renewal is an
+//     in-place update of `dueDate`/`renewalCount` on the still-open row (not a new row) — a
+//     renewal doesn't change the loan's identity the way a hostel Transfer changes room/bed
+//     identity, it only extends the same loan. This append-only history is itself the audit trail
+//     for custody (Decision — no separate LibraryAuditLog, matching Hostel's own precedent of not
+//     duplicating FeeAuditLog's heavier machinery where nothing asked for it).
+//   - BookCopy.status is transactionally maintained by the issue/return/renew/reserve/lost/damage
+//     services, never derived at read time — mirrors HostelBed.status exactly, directly serving
+//     the Inventory/Available-copies report as an indexed lookup.
+//   - Overdue status is deliberately NOT a stored BookIssue value — it is computed live from
+//     `dueDate` vs. "as of" date, reusing the exact `asOfDate > dueDate` shape already proven by
+//     Phase 8's computeInvoiceStatus. Only ISSUED/RETURNED/LOST/DAMAGED are real stored states.
+//   - Fine integration is the minimum required, per the approved review: NO new "LibraryFeeRule"
+//     rate-rule table. Late fines reuse the *existing* FineRule + computeFine() helper (PER_DAY,
+//     already generic — not invoice-specific) for the amount; Lost/Damage fines default to
+//     `Book.replacementCost`. FeeInvoice gains one nullable `bookIssueId` FK (see FeeInvoice above)
+//     pointing at the specific incident, generated one-time per BookIssue via
+//     generateLibraryFineInvoice, the library analogue of generateHostelOneTimeInvoice. This ONLY
+//     works for STUDENT members, because FeeInvoice.studentId is a required column — a hard
+//     constraint from Phase 8 this phase must not break ("never redesign previous phases").
+//     Teacher/Staff fines are therefore tracked as a live-computed amount plus the same
+//     `fineWaived`/`fineWaivedBy`/`fineWaivedReason` administrator-override fields directly on
+//     BookIssue (used for ALL member types, including pre-invoice student waivers — a student
+//     fine already turned into a FeeInvoice is corrected via the existing Fee
+//     concession/reversal flow instead, never by re-editing BookIssue).
+//   - No new Invoice/Payment/Ledger/Receipt/AuditLog model. No new Member table. No cron/scheduled
+//     job — every notification (Issue, Return, Reservation Available, Library Alert) fires
+//     synchronously inside the triggering Server Action, exactly like every notification in every
+//     prior phase.
+
+enum LibraryMemberType {
+  STUDENT
+  TEACHER
+  STAFF
+}
+
+enum BookCopyStatus {
+  AVAILABLE
+  ISSUED
+  RESERVED
+  LOST
+  DAMAGED
+}
+
+enum BookIssueStatus {
+  ISSUED
+  RETURNED
+  LOST
+  DAMAGED
+}
+
+enum BookReservationStatus {
+  PENDING
+  AVAILABLE
+  FULFILLED
+  CANCELLED
+  EXPIRED
+}
+
+// School-scoped, session-independent master data — a physical library branch. Multiple rows per
+// school are explicitly supported (requirement 1).
+model Library {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name    String
+  code    String
+  address String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  settings LibrarySettings?
+  books    Book[]
+  racks    Rack[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("libraries")
+}
+
+// One settings row per Library — loan/renewal/reservation policy, mirrors PeriodConfiguration's
+// own settings-table shape (Phase 6 precedent).
+model LibrarySettings {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  libraryId String  @map("library_id") @db.Uuid
+  library   Library @relation(fields: [tenantId, libraryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  defaultLoanPeriodDays Int @default(14) @map("default_loan_period_days")
+  maxBooksStudent       Int @default(3) @map("max_books_student")
+  maxBooksTeacher       Int @default(5) @map("max_books_teacher")
+  maxBooksStaff         Int @default(5) @map("max_books_staff")
+  maxRenewalCount       Int @default(2) @map("max_renewal_count")
+  reservationHoldDays   Int @default(2) @map("reservation_hold_days")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, libraryId])
+  @@map("library_settings")
+}
+
+// School-wide catalog lookup — shared across every Library branch of the school, mirrors
+// FeeCategory's own shape.
+model BookCategory {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  books Book[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("book_categories")
+}
+
+model Author {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name      String
+  biography String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  books Book[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, schoolId])
+  @@map("authors")
+}
+
+model Publisher {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  books Book[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, schoolId])
+  @@map("publishers")
+}
+
+// Title-level bibliographic record — one row per distinct title/edition, regardless of how many
+// physical copies exist (see BookCopy).
+model Book {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  libraryId String  @map("library_id") @db.Uuid
+  library   Library @relation(fields: [tenantId, libraryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  bookCategoryId String       @map("book_category_id") @db.Uuid
+  bookCategory   BookCategory @relation(fields: [tenantId, bookCategoryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  authorId String @map("author_id") @db.Uuid
+  author   Author @relation(fields: [tenantId, authorId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  publisherId String    @map("publisher_id") @db.Uuid
+  publisher   Publisher @relation(fields: [tenantId, publisherId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Optional — only for curriculum-aligned textbooks. NOT the primary classification (see the
+  // section header comment above); most library books will leave this null.
+  academicSubjectId String?  @map("academic_subject_id") @db.Uuid
+  academicSubject   Subject? @relation(fields: [tenantId, academicSubjectId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  title       String
+  isbn        String?
+  language    String
+  edition     String?
+  description String?
+
+  // Feeds the default Lost Book Fine amount (generateLibraryFineInvoice falls back to a flat
+  // FineRule amount when this is unset).
+  replacementCost Decimal @default(0) @map("replacement_cost") @db.Decimal(12, 2)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  copies       BookCopy[]
+  reservations BookReservation[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, libraryId])
+  @@index([tenantId, bookCategoryId])
+  @@index([tenantId, authorId])
+  @@index([tenantId, isbn])
+  @@map("books")
+}
+
+// Physical storage location, level 1 — a Library has many Racks.
+model Rack {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  libraryId String  @map("library_id") @db.Uuid
+  library   Library @relation(fields: [tenantId, libraryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  shelves Shelf[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, libraryId, code])
+  @@index([tenantId, libraryId])
+  @@map("racks")
+}
+
+// Physical storage location, level 2 — a Rack has many Shelves; a BookCopy is ultimately placed
+// on a Shelf (see BookCopy.shelfId).
+model Shelf {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  rackId String @map("rack_id") @db.Uuid
+  rack   Rack   @relation(fields: [tenantId, rackId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  bookCopies BookCopy[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, rackId, code])
+  @@index([tenantId, rackId])
+  @@map("shelves")
+}
+
+// The physical, holdings-level unit — one row per copy of a Book. `accessionNumber` is the single
+// canonical human-readable identifier; both the printable QR code and the Code128 barcode are
+// rendered directly from it at UI/label render time (see components/features/library) rather than
+// storing two redundant encodings of the same value.
+model BookCopy {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  bookId String @map("book_id") @db.Uuid
+  book   Book   @relation(fields: [tenantId, bookId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  shelfId String? @map("shelf_id") @db.Uuid
+  shelf   Shelf?  @relation(fields: [tenantId, shelfId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  accessionNumber String @map("accession_number")
+
+  // Transactionally maintained by issue/return/renew/reserve/lost/damage services — never
+  // derived at read time (mirrors HostelBed.status exactly).
+  status BookCopyStatus @default(AVAILABLE)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  issues BookIssue[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, accessionNumber])
+  @@index([tenantId, bookId])
+  @@index([tenantId, shelfId])
+  @@index([tenantId, status])
+  @@map("book_copies")
+}
+
+// One row per loan episode — APPEND-ONLY (see section header). `libraryId` is denormalized at
+// issue-time (mirrors TransportAttendance/HostelAttendance denormalizing their own location FKs)
+// so a mid-loan reshelving never has to be joined through for library-scoped reports.
+// `memberType`/`memberId` is the polymorphic member reference (see section header) — validated
+// against Student/Teacher/UserProfile by the application layer, never a DB-level FK.
+model BookIssue {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  bookCopyId String   @map("book_copy_id") @db.Uuid
+  bookCopy   BookCopy @relation(fields: [tenantId, bookCopyId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  libraryId String @map("library_id") @db.Uuid
+
+  memberType LibraryMemberType @map("member_type")
+  memberId   String            @map("member_id") @db.Uuid
+
+  issueDate  DateTime  @map("issue_date") @db.Date
+  dueDate    DateTime  @map("due_date") @db.Date
+  returnDate DateTime? @map("return_date") @db.Date
+
+  status       BookIssueStatus @default(ISSUED)
+  renewalCount Int             @default(0) @map("renewal_count")
+
+  issuedBy   String? @map("issued_by") @db.Uuid
+  returnedBy String? @map("returned_by") @db.Uuid
+
+  // Administrator override — waives the fine for THIS incident, for any member type. For a
+  // STUDENT fine already materialized as a FeeInvoice, correction goes through the existing Fee
+  // concession/reversal flow instead of this field (see section header).
+  fineWaived       Boolean   @default(false) @map("fine_waived")
+  fineWaivedBy     String?   @map("fine_waived_by") @db.Uuid
+  fineWaivedReason String?   @map("fine_waived_reason")
+  fineWaivedAt     DateTime? @map("fine_waived_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  invoices              FeeInvoice[]
+  fulfilledReservations BookReservation[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, bookCopyId, status])
+  @@index([tenantId, memberType, memberId])
+  @@index([tenantId, dueDate, status])
+  @@index([tenantId, libraryId, status])
+  @@map("book_issues")
+}
+
+// A reservation is on the TITLE (Book), not a specific copy — the member gets notified when ANY
+// copy of the title becomes available. `fulfilledBookIssueId` is set once the reservation
+// converts into an actual BookIssue.
+model BookReservation {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  bookId String @map("book_id") @db.Uuid
+  book   Book   @relation(fields: [tenantId, bookId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  memberType LibraryMemberType @map("member_type")
+  memberId   String            @map("member_id") @db.Uuid
+
+  reservationDate DateTime              @map("reservation_date") @db.Date
+  status          BookReservationStatus @default(PENDING)
+  notifiedAt      DateTime?             @map("notified_at") @db.Timestamptz(3)
+
+  fulfilledBookIssueId String?    @map("fulfilled_book_issue_id") @db.Uuid
+  fulfilledBookIssue   BookIssue? @relation(fields: [tenantId, fulfilledBookIssueId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, bookId, status])
+  @@index([tenantId, memberType, memberId])
+  @@map("book_reservations")
 }

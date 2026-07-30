@@ -16,12 +16,14 @@ export interface FeeInvoiceEntity {
   academicSessionId: string;
   classId: string;
   feeCategoryId: string;
-  // Phase 10 Decision 1 (extended by Phase 11): exactly one of feeStructureItemId (tuition/
-  // exam-type invoice), routeFeeRuleId (transport invoice), or hostelFeeRuleId (hostel invoice)
-  // is set — enforced at the service layer, not the DB.
+  // Phase 10 Decision 1 (extended by Phase 11, Phase 12): exactly one of feeStructureItemId
+  // (tuition/exam-type invoice), routeFeeRuleId (transport invoice), hostelFeeRuleId (hostel
+  // invoice), or bookIssueId (library fine invoice) is set — enforced at the service layer, not
+  // the DB.
   feeStructureItemId: string | null;
   routeFeeRuleId: string | null;
   hostelFeeRuleId: string | null;
+  bookIssueId: string | null;
   installmentPlanId: string | null;
   installmentNumber: number | null;
   appliedConcessionId: string | null;
