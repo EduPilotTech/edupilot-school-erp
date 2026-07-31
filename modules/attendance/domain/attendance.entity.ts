@@ -24,6 +24,13 @@ export interface StudentAttendanceEntity {
 // Domain view of TeacherAttendance. `userProfileId` references UserProfile directly — no
 // dedicated Teacher entity exists (see modules/attendance's own README-equivalent comment in
 // get-student... no, see the domain repository file below for the full reasoning).
+//
+// Phase 13 — `checkInTime`/`checkOutTime` are additive, nullable "HH:mm" strings (the actual
+// clock time), supplementary evidence for Monthly Attendance / Late-Entry / Early-Exit reporting.
+// `status` remains the single source of truth for PRESENT/ABSENT/LATE/HALF_DAY/LEAVE, exactly as
+// before — these two fields never drive a second classification layer. Prisma's `@db.Time`
+// column is converted to/from this plain string at the infrastructure boundary (see
+// prisma-teacher-attendance.repository.ts's toTimeString/fromTimeString).
 export interface TeacherAttendanceEntity {
   id: string;
   tenantId: string;
@@ -31,6 +38,8 @@ export interface TeacherAttendanceEntity {
   date: Date;
   status: AttendanceStatusValue;
   remarks: string | null;
+  checkInTime: string | null;
+  checkOutTime: string | null;
   markedBy: string | null;
   createdAt: Date;
   updatedAt: Date;

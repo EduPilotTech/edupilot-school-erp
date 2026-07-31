@@ -43,6 +43,8 @@ export async function markTeacherAttendance(
     date: data.date,
     status: data.status,
     remarks: data.remarks ?? null,
+    checkInTime: data.checkInTime ?? null,
+    checkOutTime: data.checkOutTime ?? null,
     markedBy: actingUserId,
   });
 
@@ -52,6 +54,8 @@ export async function markTeacherAttendance(
     date: attendance.date,
     status: attendance.status,
     remarks: attendance.remarks,
+    checkInTime: attendance.checkInTime,
+    checkOutTime: attendance.checkOutTime,
     markedBy: attendance.markedBy,
   };
 }

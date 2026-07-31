@@ -77,3 +77,37 @@ export interface StudentAttendanceReportDTO {
   entries: StudentAttendanceReportEntry[];
   counts: AttendanceStatusCounts;
 }
+
+// Phase 13 — Staff Monthly Attendance report, mirroring StudentAttendanceReport's shape but
+// scoped to a calendar month (year + month) rather than an arbitrary date range, and carrying
+// the additive checkIn/checkOutTime evidence per day.
+export const getStaffMonthlyAttendanceReportSchema = z.object({
+  userProfileId: z.string().uuid("Invalid user id."),
+  year: z.number().int().min(2000).max(2100),
+  month: z.number().int().min(1).max(12),
+});
+export type GetStaffMonthlyAttendanceReportInput = z.infer<typeof getStaffMonthlyAttendanceReportSchema>;
+
+export interface StaffMonthlyAttendanceReportEntry {
+  date: Date;
+  status: AttendanceStatusValue;
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  remarks: string | null;
+}
+
+export interface StaffMonthlyAttendanceSummary {
+  presentDays: number;
+  absentDays: number;
+  lateDays: number;
+  halfDays: number;
+  leaveDays: number;
+}
+
+export interface StaffMonthlyAttendanceReportDTO {
+  userProfileId: string;
+  year: number;
+  month: number;
+  entries: StaffMonthlyAttendanceReportEntry[];
+  summary: StaffMonthlyAttendanceSummary;
+}

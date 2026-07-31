@@ -33,11 +33,30 @@ const SYSTEM_ROLES = [
   // attendance, leave approval, visitor register, mess). Mirrors TRANSPORT_MANAGER's own
   // precedent exactly: a narrower, module-specific role rather than overloading SCHOOL_ADMIN.
   { code: "HOSTEL_WARDEN", name: "Hostel Warden", isProtected: false },
+  // Phase 13 — HR & Payroll Management. Two narrower, module-specific roles mirroring
+  // TRANSPORT_MANAGER/HOSTEL_WARDEN's own precedent: HR_MANAGER owns day-to-day HR operations
+  // (employee records, leave, performance reviews); PAYROLL_OFFICER owns salary structures,
+  // loans/advances, payroll runs, and salary payments. Kept separate rather than merged into one
+  // role since a school may staff these as two distinct back-office functions.
+  { code: "HR_MANAGER", name: "HR Manager", isProtected: false },
+  { code: "PAYROLL_OFFICER", name: "Payroll Officer", isProtected: false },
 ] as const;
 
 // Only Super Admin and School Admin hold the base admin permission set — every other system
 // role is a non-administrative staff/portal role with none of those grants by default.
 const ADMIN_ROLE_CODES = ["SUPER_ADMIN", "SCHOOL_ADMIN"] as const;
+
+// Phase 13 — every staff-facing system role that can plausibly hold an Employee HR record (i.e.
+// everyone except PARENT and STUDENT). Used to grant the Employee Portal self-service permission
+// broadly: "Employee can access ONLY own records" (security requirement) is enforced by ownership
+// checks inside modules/hr/application/employee-portal.service.ts itself (ties every read to the
+// caller's own employeeId, resolved server-side from their session — never client input), not by
+// narrowing which roles may reach the endpoint at all.
+const EMPLOYEE_ROLE_CODES = [
+  ...ADMIN_ROLE_CODES,
+  "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER", "ACCOUNTANT", "RECEPTIONIST",
+  "LIBRARIAN", "CASHIER", "TRANSPORT_MANAGER", "HOSTEL_WARDEN", "HR_MANAGER", "PAYROLL_OFFICER",
+] as const;
 
 // The 9 permission codes actually referenced by working code in this codebase (modules/users'
 // application services and app/settings/users/actions.ts), the 3 Sprint 4.8A document-management
@@ -47,9 +66,10 @@ const ADMIN_ROLE_CODES = ["SUPER_ADMIN", "SCHOOL_ADMIN"] as const;
 // Phase 10 transport-management codes (11 `transport.*` staff-side + 1 `parent.transport.view`),
 // the Phase 11 hostel-management codes (11 `hostel.*` staff-side + 1 `parent.hostel.view`), and —
 // as of Phase 12 — the 8 library-management codes (7 `library.*` staff-side + 1
-// `parent.library.view`). Every code here still follows the file's original principle (only
-// seed what real code references, or what a task explicitly asks to seed ahead of its code — see
-// Sprint 4.8A's own comment history for that exception).
+// `parent.library.view`), and — as of Phase 13 — the 11 HR-and-payroll-management codes (10
+// `hr.*`/`payroll.*` staff-side + 1 `employee.portal.access`). Every code here still follows the
+// file's original principle (only seed what real code references, or what a task explicitly asks
+// to seed ahead of its code — see Sprint 4.8A's own comment history for that exception).
 //
 // Each entry now carries its own `roles` list rather than every permission going to the same
 // ADMIN_ROLE_CODES set — needed as of Sprint 4.9, whose 3-tier access model
@@ -797,6 +817,80 @@ const PERMISSIONS = [
     resource: "parent.library",
     action: "view",
     roles: ["PARENT"] as const,
+  },
+  // Phase 13 — HR & Payroll Management. Manage-type codes go to Admin + the new HR_MANAGER/
+  // PAYROLL_OFFICER roles, mirroring TRANSPORT_MANAGER/HOSTEL_WARDEN's own precedent exactly;
+  // report-view codes additionally add PRINCIPAL for oversight. Staff attendance MARKING reuses
+  // the existing Phase 5 `attendance.teacher.mark`/`attendance.teacher.view` codes — no duplicate
+  // codes are created for it here. `employee.portal.access` is the one Employee-Portal-wide code,
+  // granted to EMPLOYEE_ROLE_CODES (every staff role, not just HR/Payroll) since it gates a
+  // self-service surface every employee — not just HR/Payroll staff — must be able to reach; the
+  // "own records only" restriction is enforced inside the application service itself, not by RBAC.
+  {
+    code: "hr.master.manage",
+    resource: "hr.master",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HR_MANAGER"] as const,
+  },
+  {
+    code: "hr.employee.manage",
+    resource: "hr.employee",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HR_MANAGER"] as const,
+  },
+  {
+    code: "hr.leave.manage",
+    resource: "hr.leave",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HR_MANAGER"] as const,
+  },
+  {
+    code: "hr.performance.manage",
+    resource: "hr.performance",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "HR_MANAGER"] as const,
+  },
+  {
+    code: "hr.report.view",
+    resource: "hr.report",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "HR_MANAGER", "PRINCIPAL"] as const,
+  },
+  {
+    code: "payroll.structure.manage",
+    resource: "payroll.structure",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PAYROLL_OFFICER"] as const,
+  },
+  {
+    code: "payroll.loan.manage",
+    resource: "payroll.loan",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PAYROLL_OFFICER"] as const,
+  },
+  {
+    code: "payroll.run.manage",
+    resource: "payroll.run",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PAYROLL_OFFICER"] as const,
+  },
+  {
+    code: "payroll.payment.manage",
+    resource: "payroll.payment",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "PAYROLL_OFFICER"] as const,
+  },
+  {
+    code: "payroll.report.view",
+    resource: "payroll.report",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PAYROLL_OFFICER", "PRINCIPAL"] as const,
+  },
+  {
+    code: "employee.portal.access",
+    resource: "employee.portal",
+    action: "access",
+    roles: EMPLOYEE_ROLE_CODES,
   },
 ] as const;
 

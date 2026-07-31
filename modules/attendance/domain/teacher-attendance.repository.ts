@@ -7,6 +7,11 @@ export interface MarkTeacherAttendanceInput {
   date: Date;
   status: AttendanceStatusValue;
   remarks?: string | null;
+  // Phase 13 — optional "HH:mm" strings, converted to a Date-with-arbitrary-date-part for
+  // Prisma's `@db.Time` column at the repository layer (see the Prisma implementation's
+  // toTimeString/fromTimeString).
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
   markedBy?: string | null;
 }
 

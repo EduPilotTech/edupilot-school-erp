@@ -34,11 +34,19 @@ export const bulkMarkStudentAttendanceSchema = z.object({
 });
 export type BulkMarkStudentAttendanceServiceInput = z.infer<typeof bulkMarkStudentAttendanceSchema>;
 
+// Phase 13 — "HH:mm" (24-hour), validated the same way across every @db.Time-backed schema in
+// this codebase (see modules/timetable/application/dto/school-config.dto.ts's own time regex).
+const timeStringSchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Time must be in HH:mm format.");
+
 export const markTeacherAttendanceSchema = z.object({
   userProfileId: z.string().uuid("Invalid user id."),
   date: z.coerce.date(),
   status: attendanceStatusSchema,
   remarks: z.string().trim().max(500).optional(),
+  checkInTime: timeStringSchema.optional(),
+  checkOutTime: timeStringSchema.optional(),
 });
 export type MarkTeacherAttendanceServiceInput = z.infer<typeof markTeacherAttendanceSchema>;
 
@@ -60,5 +68,7 @@ export interface TeacherAttendanceDTO {
   date: Date;
   status: AttendanceStatusValue;
   remarks: string | null;
+  checkInTime: string | null;
+  checkOutTime: string | null;
   markedBy: string | null;
 }

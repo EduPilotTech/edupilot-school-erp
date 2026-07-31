@@ -183,6 +183,26 @@ model Tenant {
   bookCopies                  BookCopy[]
   bookIssues                  BookIssue[]
   bookReservations            BookReservation[]
+  departments                 Department[]
+  designations                Designation[]
+  employmentTypes             EmploymentType[]
+  employees                   Employee[]
+  employeeBankDetails         EmployeeBankDetail[]
+  employeeDocuments           EmployeeDocument[]
+  leaveTypes                  LeaveType[]
+  employeeLeaveBalances       EmployeeLeaveBalance[]
+  employeeLeaveRequests       EmployeeLeaveRequest[]
+  performanceReviews          PerformanceReview[]
+  salaryStructures            SalaryStructure[]
+  salaryComponents            SalaryComponent[]
+  employeeSalaryAssignments   EmployeeSalaryAssignment[]
+  employeeLoans               EmployeeLoan[]
+  payrollRuns                 PayrollRun[]
+  payslips                    Payslip[]
+  payslipComponents           PayslipComponent[]
+  salaryPayments              SalaryPayment[]
+  payrollLedgerEntries        PayrollLedgerEntry[]
+  payrollAuditLogs            PayrollAuditLog[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -232,6 +252,13 @@ model School {
   bookCategories   BookCategory[]
   authors          Author[]
   publishers       Publisher[]
+  departments      Department[]
+  designations     Designation[]
+  employmentTypes  EmploymentType[]
+  employees        Employee[]
+  leaveTypes       LeaveType[]
+  salaryStructures SalaryStructure[]
+  payrollRuns      PayrollRun[]
 
   // Composite unique alongside the PK — required so AcademicSession can enforce, via a real
   // foreign key, that its (tenantId, schoolId) pair always points to a School actually owned
@@ -450,6 +477,7 @@ model UserProfile {
   notifications      Notification[]
   driver             Driver?
   helper             Helper?
+  employee           Employee?
 
   // Compound unique alongside the PK — required so UserRole can enforce, via a real foreign
   // key, that its (tenantId, userId) pair always points to a UserProfile actually owned by
@@ -909,6 +937,16 @@ model TeacherAttendance {
   status  AttendanceStatus
   remarks String?
 
+  // Phase 13 — additive, nullable only (approved architecture decision: "TeacherAttendance will
+  // be extended with nullable fields only if required: checkInTime, checkOutTime. Do NOT create
+  // another attendance source unless absolutely necessary"). Every existing row keeps working
+  // unchanged with these columns null. `status` remains the single source of truth for whether a
+  // day counts as PRESENT/ABSENT/LATE/HALF_DAY/LEAVE — exactly as today — these two columns are
+  // supplementary evidence (the actual clock time) for the Monthly Attendance / Late-Entry /
+  // Early-Exit reports, not a second classification engine layered on top of `status`.
+  checkInTime  DateTime? @map("check_in_time") @db.Time
+  checkOutTime DateTime? @map("check_out_time") @db.Time
+
   markedBy String? @map("marked_by") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -1016,6 +1054,16 @@ model Teacher {
 
   isActive Boolean @default(true) @map("is_active")
 
+  // Phase 13 — additive, nullable link to the new HR canonical Employee record. Teacher itself
+  // stays entirely unchanged otherwise (per the approved Phase 13 architecture decision: "Teacher
+  // remains unchanged. Teacher links to Employee.") — every existing Teacher consumer
+  // (Timetable, Examination, Homework, Substitute Teacher) keeps referencing Teacher.id exactly
+  // as before. Nullable because a Teacher row can exist before its Employee HR record is created
+  // (or, in principle, never gets one) — this link is populated by the HR module, not required
+  // at Teacher-creation time.
+  employeeId String?   @map("employee_id") @db.Uuid
+  employee   Employee? @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
@@ -1030,6 +1078,7 @@ model Teacher {
   @@unique([tenantId, id])
   @@unique([tenantId, userProfileId])
   @@unique([tenantId, employeeCode])
+  @@unique([tenantId, employeeId])
   @@index([tenantId])
   @@map("teachers")
 }
@@ -2256,6 +2305,9 @@ enum NotificationType {
   // TRANSPORT_ALERT's own precedent: none of the existing types fit cleanly, so a new one is
   // added rather than overloading NOTICE.
   LIBRARY_ALERT
+  // Phase 13 — Leave Approved/Rejected, Salary Released, Document Generated. Explicitly required
+  // by the approved Phase 13 architecture decisions ("Create PAYROLL_ALERT").
+  PAYROLL_ALERT
 }
 
 enum NotificationPriority {
@@ -3973,4 +4025,809 @@ model BookReservation {
   @@index([tenantId, bookId, status])
   @@index([tenantId, memberType, memberId])
   @@map("book_reservations")
+}
+
+// --- Phase 13 — HR & Payroll Management (modules/hr, modules/payroll) -------------------------
+//
+// Key shape decisions (see the approved Phase 13 architecture review for full rationale):
+//   - Employee is the new HR canonical entity — a 1:1 extension of UserProfile, mirroring
+//     Teacher's own exact precedent (name/email/phone/avatar stay on UserProfile; Employee only
+//     carries HR-specific metadata). Teacher itself is UNCHANGED except for one additive,
+//     nullable `employeeId` link — every existing Teacher consumer (Timetable, Examination,
+//     Homework) keeps referencing Teacher.id exactly as before. A teaching staff member ends up
+//     with both a Teacher row (academic modules) and an Employee row (HR/Payroll), cross-linked.
+//   - Department/Designation/EmploymentType are school-scoped lookup tables (mirror
+//     BookCategory), not closed enums — the requirement's own "support future expansion"
+//     language is the same signal this codebase already uses to prefer an admin-managed table
+//     over an enum (compare BookCategory vs. a hypothetical closed genre enum).
+//   - Staff Attendance reuses TeacherAttendance as-is (it already keys off UserProfile.id, not
+//     Teacher.id, so it already covers any staff type) — no new attendance table. The only change
+//     is two additive nullable columns (checkInTime/checkOutTime) added directly on
+//     TeacherAttendance above. `status` stays the single source of truth for
+//     PRESENT/ABSENT/LATE/HALF_DAY/LEAVE, exactly as Phase 5 built it; the two time columns are
+//     supplementary evidence for Monthly Attendance / Late-Entry / Early-Exit reporting, not a
+//     second classification layer.
+//   - EmployeeLeaveRequest mirrors HostelLeaveRequest's exact request/approve/reject shape
+//     (leaveType/fromDate/toDate/reason/status/approvedBy/approvedAt/rejectionReason). Leave
+//     Balance/Allocation/Carry-Forward has no prior precedent in this codebase and is genuinely
+//     new: one EmployeeLeaveBalance row per (employee, leaveType, year).
+//   - Payroll is a COMPLETELY SEPARATE pipeline from Fee, per the explicit approved decision —
+//     Fee's entire shape (FeeInvoice/FeePayment/FeeLedgerEntry) is student/guardian-owes-school
+//     (an inbound charge); Payroll is school-owes-employee (an outbound wage), the opposite
+//     direction. Reusing FeeInvoice would have distorted a model that's structurally wrong for
+//     this direction of money movement. Instead Payroll mirrors Fee's own PROVEN DISCIPLINES
+//     without touching Fee's tables: SalaryStructure/SalaryComponent mirrors
+//     FeeStructure/FeeStructureItem's container/item shape; Payslip is the earning-side analogue
+//     of FeeInvoice; SalaryPayment mirrors FeePayment's "immutable once COMPLETED, corrections
+//     via reversal only" discipline; PayrollLedgerEntry mirrors FeeLedgerEntry's append-only
+//     running-balance discipline, scoped per-employee instead of per-student.
+//   - EmployeeSalaryAssignment is APPEND-ONLY (close-not-edit), mirroring
+//     StudentHostelAssignment/Enrollment exactly — a salary revision closes the current row
+//     (`effectiveTo` + new row's `effectiveFrom`) rather than editing `basicSalary` in place. This
+//     row history IS the Increment History requirement — no separate model needed.
+//   - SalaryComponent carries an `isStatutory` flag, reserved and UNUSED by any calculation this
+//     phase (per the explicit "PF/ESI/Professional Tax/TDS are OUT OF SCOPE... must support
+//     future statutory rules without implementing them" instruction) — it exists purely so a
+//     future phase can filter/branch on it without a schema change.
+//   - PayrollRun.status (DRAFT/PROCESSED/LOCKED/CANCELLED) is the Payroll Lock state machine —
+//     once LOCKED, no Payslip in that run may be edited or regenerated; a correction requires a
+//     new run, never an in-place edit, mirroring FeePayment's own immutability discipline applied
+//     at the run level.
+//   - PayrollAuditLog mirrors FeeAuditLog exactly (actorId/action/entityType/entityId/
+//     beforeState/afterState) — a dedicated audit log, breaking from Hostel/Library's "skip it"
+//     precedent, because the codebase's own stated rule is "add a dedicated audit log only when
+//     the module's compliance/financial sensitivity explicitly demands it, as Fee did" — Payroll
+//     clears that bar (explicitly required by this phase's own instructions).
+//   - PerformanceReview is a single lightweight model (rating/remarks/promotionRecommended); no
+//     separate "Increment History" model — see EmployeeSalaryAssignment above.
+//   - EmployeeDocument mirrors StudentDocument's exact shape (one `documentType` enum covering
+//     both uploaded documents — Photo, Identity Proof, Bank Proof, Medical Certificate, Police
+//     Verification, Resume — and system-GENERATED letters — Appointment/Joining/Promotion/
+//     Warning Letter, Experience Certificate, Relieving Letter). Reuses the same StorageService
+//     abstraction with a new `employee-documents` bucket, exactly like Sprint 4.8's own
+//     student-documents bucket.
+
+enum EmploymentStatus {
+  ACTIVE
+  ON_PROBATION
+  ON_LEAVE
+  SUSPENDED
+  RESIGNED
+  TERMINATED
+  RETIRED
+}
+
+enum EmployeeDocumentType {
+  PHOTO
+  RESUME
+  IDENTITY_PROOF
+  BANK_PROOF
+  MEDICAL_CERTIFICATE
+  POLICE_VERIFICATION
+  APPOINTMENT_LETTER
+  JOINING_LETTER
+  PROMOTION_LETTER
+  WARNING_LETTER
+  EXPERIENCE_CERTIFICATE
+  RELIEVING_LETTER
+  OTHER
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum SalaryComponentType {
+  EARNING
+  DEDUCTION
+}
+
+enum SalaryCalculationType {
+  FLAT
+  PERCENTAGE_OF_BASIC
+}
+
+enum EmployeeLoanType {
+  LOAN
+  ADVANCE
+}
+
+enum EmployeeLoanStatus {
+  ACTIVE
+  CLOSED
+  CANCELLED
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  PROCESSED
+  LOCKED
+  CANCELLED
+}
+
+enum PayslipStatus {
+  DRAFT
+  GENERATED
+  PAID
+  CANCELLED
+}
+
+enum SalaryPaymentMode {
+  BANK_TRANSFER
+  CASH
+  CHEQUE
+  UPI
+  OTHER
+}
+
+enum SalaryPaymentStatus {
+  COMPLETED
+  REVERSED
+  CANCELLED
+}
+
+enum PayrollLedgerEntryType {
+  PAYSLIP_GENERATED
+  PAYMENT
+  REVERSAL
+}
+
+// --- HR Master -----------------------------------------------------------------------------
+
+model Department {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  designations Designation[]
+  employees    Employee[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("departments")
+}
+
+model Designation {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Optional — a designation may be department-agnostic (e.g. "Librarian" doesn't sit under an
+  // academic department).
+  departmentId String?     @map("department_id") @db.Uuid
+  department   Department? @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  employees Employee[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@index([tenantId, departmentId])
+  @@map("designations")
+}
+
+model EmploymentType {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  employees Employee[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("employment_types")
+}
+
+// The HR canonical entity — a 1:1 extension of UserProfile, mirroring Teacher's own precedent
+// exactly (see the section header comment above for the full Teacher-coexistence rationale).
+model Employee {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  userProfileId String      @map("user_profile_id") @db.Uuid
+  userProfile   UserProfile @relation(fields: [tenantId, userProfileId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  departmentId     String         @map("department_id") @db.Uuid
+  department       Department     @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+  designationId    String         @map("designation_id") @db.Uuid
+  designation      Designation    @relation(fields: [tenantId, designationId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+  employmentTypeId String         @map("employment_type_id") @db.Uuid
+  employmentType   EmploymentType @relation(fields: [tenantId, employmentTypeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Self-referencing org-chart link — nullable (top-of-chart employees report to no one).
+  reportingManagerId String?    @map("reporting_manager_id") @db.Uuid
+  reportingManager   Employee?  @relation("EmployeeReportingManager", fields: [tenantId, reportingManagerId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+  directReports      Employee[] @relation("EmployeeReportingManager")
+
+  employeeCode     String           @map("employee_code")
+  joiningDate      DateTime         @map("joining_date") @db.Date
+  confirmationDate DateTime?        @map("confirmation_date") @db.Date
+  employmentStatus EmploymentStatus @default(ACTIVE) @map("employment_status")
+
+  qualification            String?
+  experienceYears          Int?    @map("experience_years")
+  emergencyContactName     String? @map("emergency_contact_name")
+  emergencyContactPhone    String? @map("emergency_contact_phone")
+  emergencyContactRelation String? @map("emergency_contact_relation")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  teacher              Teacher?
+  bankDetail           EmployeeBankDetail?
+  documents            EmployeeDocument[]
+  leaveBalances        EmployeeLeaveBalance[]
+  leaveRequests        EmployeeLeaveRequest[]
+  performanceReviews   PerformanceReview[]
+  salaryAssignments    EmployeeSalaryAssignment[]
+  loans                EmployeeLoan[]
+  payslips             Payslip[]
+  salaryPayments       SalaryPayment[]
+  payrollLedgerEntries PayrollLedgerEntry[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, userProfileId])
+  @@unique([tenantId, employeeCode])
+  @@index([tenantId, schoolId])
+  @@index([tenantId, departmentId])
+  @@index([tenantId, employmentStatus])
+  @@index([tenantId, reportingManagerId])
+  @@map("employees")
+}
+
+// 1:1 sensitive-data detail table, isolated from Employee's own columns for cleaner access
+// control (mirrors LibrarySettings' own "1:1 detail table, no soft delete" shape).
+model EmployeeBankDetail {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeId String   @map("employee_id") @db.Uuid
+  employee   Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  accountHolderName String  @map("account_holder_name")
+  accountNumber     String  @map("account_number")
+  bankName          String  @map("bank_name")
+  branchName        String? @map("branch_name")
+  ifscCode          String  @map("ifsc_code")
+  accountType       String? @map("account_type")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, employeeId])
+  @@map("employee_bank_details")
+}
+
+// Mirrors StudentDocumentEntity's exact shape — one row per uploaded OR system-generated file
+// (see the section header comment for why both live in the same `documentType` enum).
+model EmployeeDocument {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeId String   @map("employee_id") @db.Uuid
+  employee   Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  documentType     EmployeeDocumentType @map("document_type")
+  originalFileName String               @map("original_file_name")
+  storageKey       String               @map("storage_key")
+  mimeType         String               @map("mime_type")
+  fileSize         Int                  @map("file_size")
+
+  // Set only for a system-generated letter/certificate — the date printed on the document.
+  issuedDate DateTime? @map("issued_date") @db.Date
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, employeeId, documentType])
+  @@map("employee_documents")
+}
+
+// --- Leave Management ------------------------------------------------------------------------
+
+model LeaveType {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name                String
+  code                String
+  maxDaysPerYear      Int     @map("max_days_per_year")
+  carryForwardAllowed Boolean @default(false) @map("carry_forward_allowed")
+  carryForwardMaxDays Int?    @map("carry_forward_max_days")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  balances EmployeeLeaveBalance[]
+  requests EmployeeLeaveRequest[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("leave_types")
+}
+
+// One row per (employee, leaveType, year) — the Leave Allocation + running balance +
+// carry-forward record.
+model EmployeeLeaveBalance {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeId String   @map("employee_id") @db.Uuid
+  employee   Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  leaveTypeId String    @map("leave_type_id") @db.Uuid
+  leaveType   LeaveType @relation(fields: [tenantId, leaveTypeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  year               Int
+  allocatedDays      Decimal @default(0) @map("allocated_days") @db.Decimal(5, 2)
+  usedDays           Decimal @default(0) @map("used_days") @db.Decimal(5, 2)
+  carriedForwardDays Decimal @default(0) @map("carried_forward_days") @db.Decimal(5, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, employeeId, leaveTypeId, year])
+  @@map("employee_leave_balances")
+}
+
+// Request/approve/reject workflow — mirrors HostelLeaveRequest's exact shape.
+model EmployeeLeaveRequest {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeId String   @map("employee_id") @db.Uuid
+  employee   Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  leaveTypeId String    @map("leave_type_id") @db.Uuid
+  leaveType   LeaveType @relation(fields: [tenantId, leaveTypeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  fromDate  DateTime @map("from_date") @db.Date
+  toDate    DateTime @map("to_date") @db.Date
+  isHalfDay Boolean  @default(false) @map("is_half_day")
+  totalDays Decimal  @map("total_days") @db.Decimal(5, 2)
+  reason    String
+
+  status LeaveRequestStatus @default(PENDING)
+
+  approvedBy      String?   @map("approved_by") @db.Uuid
+  approvedAt      DateTime? @map("approved_at") @db.Timestamptz(3)
+  rejectionReason String?   @map("rejection_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, employeeId, status])
+  @@index([tenantId, status, fromDate])
+  @@map("employee_leave_requests")
+}
+
+// --- Performance -----------------------------------------------------------------------------
+
+model PerformanceReview {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeId String   @map("employee_id") @db.Uuid
+  employee   Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  reviewPeriodStart DateTime @map("review_period_start") @db.Date
+  reviewPeriodEnd   DateTime @map("review_period_end") @db.Date
+
+  // 1-5, validated at the DTO layer — a plain Int rather than an enum since a rating scale is
+  // more naturally a bounded number than a closed vocabulary.
+  rating               Int
+  remarks              String?
+  promotionRecommended Boolean @default(false) @map("promotion_recommended")
+
+  reviewedBy String? @map("reviewed_by") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, employeeId])
+  @@map("performance_reviews")
+}
+
+// --- Payroll: Structure ----------------------------------------------------------------------
+
+// Named template — mirrors FeeStructure's own container shape. Deliberately NOT session-scoped
+// (unlike FeeStructure): a salary structure is a standing HR template ("Standard Teaching
+// Staff"), not tied to an academic year.
+model SalaryStructure {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  components  SalaryComponent[]
+  assignments EmployeeSalaryAssignment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, schoolId, name])
+  @@index([tenantId, schoolId])
+  @@map("salary_structures")
+}
+
+// The item within a SalaryStructure — mirrors FeeStructureItem's "item under a container" shape.
+model SalaryComponent {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  salaryStructureId String          @map("salary_structure_id") @db.Uuid
+  salaryStructure   SalaryStructure @relation(fields: [tenantId, salaryStructureId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name            String
+  code            String
+  componentType   SalaryComponentType   @map("component_type")
+  calculationType SalaryCalculationType @map("calculation_type")
+  // Flat currency amount when calculationType=FLAT, or a percentage (0-100) of the employee's
+  // basicSalary when calculationType=PERCENTAGE_OF_BASIC.
+  value           Decimal               @db.Decimal(12, 2)
+
+  // Reserved, unused by any calculation this phase — see the section header comment. Lets a
+  // future phase filter/branch on statutory components (PF/ESI/PT/TDS) without a schema change.
+  isStatutory Boolean @default(false) @map("is_statutory")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  payslipComponents PayslipComponent[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, salaryStructureId, code])
+  @@index([tenantId, salaryStructureId])
+  @@map("salary_components")
+}
+
+// APPEND-ONLY (close-not-edit) — mirrors StudentHostelAssignment/Enrollment exactly. A salary
+// revision closes the current row (`effectiveTo`) and creates a new one; this row history IS the
+// Increment History requirement, no separate model needed. "Current" is the row with
+// `effectiveTo IS NULL`.
+model EmployeeSalaryAssignment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeId String   @map("employee_id") @db.Uuid
+  employee   Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  salaryStructureId String          @map("salary_structure_id") @db.Uuid
+  salaryStructure   SalaryStructure @relation(fields: [tenantId, salaryStructureId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  basicSalary   Decimal   @map("basic_salary") @db.Decimal(12, 2)
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, employeeId, effectiveTo])
+  @@map("employee_salary_assignments")
+}
+
+// Covers both "Loan" and "Advance Salary" — structurally identical (principal + monthly
+// recovery), distinguished by `loanType`. `outstandingAmount` is transactionally maintained by
+// the payroll-run recovery step, mirroring HostelBed.status's own "maintained not derived"
+// precedent.
+model EmployeeLoan {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeId String   @map("employee_id") @db.Uuid
+  employee   Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  loanType              EmployeeLoanType   @map("loan_type")
+  principalAmount       Decimal            @map("principal_amount") @db.Decimal(12, 2)
+  monthlyRecoveryAmount Decimal            @map("monthly_recovery_amount") @db.Decimal(12, 2)
+  outstandingAmount     Decimal            @map("outstanding_amount") @db.Decimal(12, 2)
+  startDate             DateTime           @map("start_date") @db.Date
+  status                EmployeeLoanStatus @default(ACTIVE)
+  reason                String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, employeeId, status])
+  @@map("employee_loans")
+}
+
+// --- Payroll: Processing ---------------------------------------------------------------------
+
+// One row per (school, billingPeriod) — the Payroll Lock state machine lives on `status`
+// (DRAFT -> PROCESSED -> LOCKED; CANCELLED is a dead-end). Aggregates are maintained
+// transactionally as payslips are generated, mirroring FeeInvoice-adjacent aggregate patterns.
+model PayrollRun {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  billingPeriod String           @map("billing_period")
+  status        PayrollRunStatus @default(DRAFT)
+
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(3)
+  processedBy String?   @map("processed_by") @db.Uuid
+  lockedAt    DateTime? @map("locked_at") @db.Timestamptz(3)
+  lockedBy    String?   @map("locked_by") @db.Uuid
+
+  totalGross      Decimal @default(0) @map("total_gross") @db.Decimal(14, 2)
+  totalDeductions Decimal @default(0) @map("total_deductions") @db.Decimal(14, 2)
+  totalNetPay     Decimal @default(0) @map("total_net_pay") @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  payslips Payslip[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, schoolId, billingPeriod])
+  @@index([tenantId, status])
+  @@map("payroll_runs")
+}
+
+// One per employee per PayrollRun — the Payroll analogue of FeeInvoice, but representing money
+// owed BY the school TO the employee.
+model Payslip {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  payrollRunId String     @map("payroll_run_id") @db.Uuid
+  payrollRun   PayrollRun @relation(fields: [tenantId, payrollRunId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeId String   @map("employee_id") @db.Uuid
+  employee   Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Denormalized from the run at generation time — mirrors HostelAttendance's own
+  // denormalize-at-mark-time reasoning, so a later run edit never rewrites a settled payslip.
+  billingPeriod String @map("billing_period")
+
+  basicSalary        Decimal       @map("basic_salary") @db.Decimal(12, 2)
+  grossEarnings      Decimal       @map("gross_earnings") @db.Decimal(12, 2)
+  totalDeductions    Decimal       @map("total_deductions") @db.Decimal(12, 2)
+  loanRecoveryAmount Decimal       @default(0) @map("loan_recovery_amount") @db.Decimal(12, 2)
+  netPay             Decimal       @map("net_pay") @db.Decimal(12, 2)
+  status             PayslipStatus @default(GENERATED)
+
+  generatedAt DateTime @default(now()) @map("generated_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  items    PayslipComponent[]
+  payments SalaryPayment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, employeeId, payrollRunId])
+  @@index([tenantId, employeeId, billingPeriod])
+  @@map("payslips")
+}
+
+// The earnings/deductions breakdown shown on the printed payslip — snapshots the component's
+// name/type/amount at generation time (the SalaryComponent it came from may change later).
+model PayslipComponent {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  payslipId String  @map("payslip_id") @db.Uuid
+  payslip   Payslip @relation(fields: [tenantId, payslipId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Nullable — a loan-recovery line item isn't tied to any SalaryComponent.
+  salaryComponentId String?          @map("salary_component_id") @db.Uuid
+  salaryComponent   SalaryComponent? @relation(fields: [tenantId, salaryComponentId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name          String
+  componentType SalaryComponentType @map("component_type")
+  amount        Decimal             @db.Decimal(12, 2)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, payslipId])
+  @@map("payslip_components")
+}
+
+// The disbursement event — mirrors FeePayment's "this row IS the immutable receipt, status-flip
+// not edit" discipline exactly.
+model SalaryPayment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  payslipId String  @map("payslip_id") @db.Uuid
+  payslip   Payslip @relation(fields: [tenantId, payslipId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Denormalized for direct employee-scoped queries (mirrors TransportAttendance's own
+  // denormalize-the-owner reasoning) without joining through Payslip every time.
+  employeeId String   @map("employee_id") @db.Uuid
+  employee   Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  amount          Decimal             @db.Decimal(12, 2)
+  paymentMode     SalaryPaymentMode   @map("payment_mode")
+  paymentDate     DateTime            @map("payment_date") @db.Date
+  referenceNumber String?             @map("reference_number")
+  status          SalaryPaymentStatus @default(COMPLETED)
+
+  reversedAt     DateTime? @map("reversed_at") @db.Timestamptz(3)
+  reversedBy     String?   @map("reversed_by") @db.Uuid
+  reversalReason String?   @map("reversal_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, employeeId])
+  @@index([tenantId, payslipId])
+  @@map("salary_payments")
+}
+
+// Pure, append-only running ledger per employee — mirrors FeeLedgerEntry exactly (Phase 8
+// Decision 11's own "make the ledger append-only, never recompute a running total on read"
+// discipline), with debit/credit sense reversed (a payslip is a credit to the employee; a
+// payment is a debit that settles it) relative to Fee's own student-owes-school direction.
+model PayrollLedgerEntry {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  employeeId String   @map("employee_id") @db.Uuid
+  employee   Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  entryType     PayrollLedgerEntryType @map("entry_type")
+  referenceType String                 @map("reference_type")
+  referenceId   String                 @map("reference_id") @db.Uuid
+
+  debit        Decimal @default(0) @db.Decimal(12, 2)
+  credit       Decimal @default(0) @db.Decimal(12, 2)
+  balanceAfter Decimal @map("balance_after") @db.Decimal(12, 2)
+
+  description String
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, employeeId, createdAt])
+  @@map("payroll_ledger_entries")
+}
+
+// Mirrors FeeAuditLog exactly — every mutating payroll service writes its audit row the same
+// way. Explicitly required by this phase's own instructions (breaking from the lighter-weight
+// precedent Hostel/Library used, per the section header comment above).
+model PayrollAuditLog {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  actorId    String? @map("actor_id") @db.Uuid
+  action     String
+  entityType String  @map("entity_type")
+  entityId   String  @map("entity_id") @db.Uuid
+
+  beforeState Json? @map("before_state")
+  afterState  Json? @map("after_state")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, createdAt])
+  @@map("payroll_audit_logs")
 }

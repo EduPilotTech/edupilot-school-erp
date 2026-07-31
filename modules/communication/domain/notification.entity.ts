@@ -7,7 +7,11 @@ export type NotificationTypeValue =
   | "EXAM_RESULT"
   | "CALENDAR_EVENT"
   | "TRANSPORT_ALERT"
-  | "LIBRARY_ALERT";
+  | "LIBRARY_ALERT"
+  // Phase 13 — Leave Approved/Rejected, Salary Released, Document Generated. Reused for every
+  // HR + Payroll notification since no separate HR_ALERT type was approved (see
+  // prisma/schema.prisma's NotificationType enum comment).
+  | "PAYROLL_ALERT";
 
 export type NotificationPriorityValue = "LOW" | "NORMAL" | "HIGH" | "URGENT";
 

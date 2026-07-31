@@ -111,4 +111,25 @@ describe("markTeacherAttendanceSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts valid checkInTime/checkOutTime HH:mm strings", () => {
+    const result = markTeacherAttendanceSchema.safeParse({
+      userProfileId: VALID_UUID,
+      date: "2026-07-28",
+      status: "PRESENT",
+      checkInTime: "09:05",
+      checkOutTime: "17:30",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a malformed checkInTime", () => {
+    const result = markTeacherAttendanceSchema.safeParse({
+      userProfileId: VALID_UUID,
+      date: "2026-07-28",
+      status: "PRESENT",
+      checkInTime: "9:05am",
+    });
+    expect(result.success).toBe(false);
+  });
 });

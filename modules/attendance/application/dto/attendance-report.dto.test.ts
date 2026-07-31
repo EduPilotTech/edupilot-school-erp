@@ -3,6 +3,7 @@ import {
   getDailyAttendanceReportSchema,
   getClassAttendanceSummarySchema,
   getStudentAttendanceReportSchema,
+  getStaffMonthlyAttendanceReportSchema,
   emptyStatusCounts,
 } from "./attendance-report.dto";
 
@@ -67,6 +68,35 @@ describe("getStudentAttendanceReportSchema", () => {
       studentId: "abc",
       startDate: "2026-07-01",
       endDate: "2026-07-31",
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("getStaffMonthlyAttendanceReportSchema", () => {
+  it("accepts a valid year/month payload", () => {
+    const result = getStaffMonthlyAttendanceReportSchema.safeParse({
+      userProfileId: VALID_UUID,
+      year: 2026,
+      month: 7,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a month above 12", () => {
+    const result = getStaffMonthlyAttendanceReportSchema.safeParse({
+      userProfileId: VALID_UUID,
+      year: 2026,
+      month: 13,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a non-uuid userProfileId", () => {
+    const result = getStaffMonthlyAttendanceReportSchema.safeParse({
+      userProfileId: "not-a-uuid",
+      year: 2026,
+      month: 7,
     });
     expect(result.success).toBe(false);
   });
