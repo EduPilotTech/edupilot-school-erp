@@ -12,6 +12,7 @@ import {
   NotificationQueueEntryNotFailedError,
   NotificationQueueEntryNotFoundError,
   NotificationQueueEntryNotPendingError,
+  NotificationQueueRetryLimitExceededError,
   NotificationTemplateNotFoundError,
 } from "../domain/errors";
 import { queueNotificationSchema } from "./dto/notification-queue.dto";
@@ -130,14 +131,25 @@ export async function scheduleNotification(
   return queueNotification(parsed.data, context);
 }
 
+// Phase 15B Milestone M13 — the retry-limit gap the Database Review flagged and deliberately left
+// unbuilt until real providers existed to retry against. A bounded, hardcoded ceiling (not yet
+// per-tenant-configurable — no NotificationProviderConfig exists to source that from) is enough
+// to close the "indefinite retry" gap without redesigning the queue's own state machine at all.
+const MAX_RETRY_COUNT = 3;
+
 // retry() — only a FAILED queue entry can be retried (see processQueueEntry's own comment for how
-// a queue entry ever reaches FAILED). Increments retryCount, resets to PENDING with a fresh
-// scheduledAt, then re-processes it immediately rather than waiting for the next queue sweep.
+// a queue entry ever reaches FAILED), and only up to MAX_RETRY_COUNT times. Increments retryCount,
+// resets to PENDING with a fresh scheduledAt, then re-processes it immediately rather than waiting
+// for the next queue sweep. Reuses the exact same dispatch path (processQueueEntry ->
+// dispatchToAllSenders -> the Provider Registry) every other send goes through — retrying against
+// a real SMTP/SMS-gateway/WhatsApp provider (Milestones M8-M11) requires no code change here at
+// all, exactly as the Provider Registry was designed to guarantee.
 export async function retryNotification(notificationId: string, context: NotificationContext): Promise<void> {
   const { tenantId } = context;
   const queueEntry = await queueRepository.findByNotificationId(tenantId, notificationId);
   if (!queueEntry) throw new NotificationQueueEntryNotFoundError();
   if (queueEntry.status !== "FAILED") throw new NotificationQueueEntryNotFailedError();
+  if (queueEntry.retryCount >= MAX_RETRY_COUNT) throw new NotificationQueueRetryLimitExceededError();
 
   await queueRepository.update(tenantId, queueEntry.id, {
     retryCount: queueEntry.retryCount + 1,

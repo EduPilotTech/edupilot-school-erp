@@ -69,3 +69,12 @@ export class NotificationQueueEntryNotFailedError extends BusinessRuleError {
     super(message);
   }
 }
+
+// Phase 15B Milestone M13 — the retry-limit gap flagged (but deliberately left unbuilt) by the
+// Database Review, filled in now using the `QUEUE_MAX_RETRIES_EXCEEDED` catalogue code M1 already
+// reserved for exactly this scenario.
+export class NotificationQueueRetryLimitExceededError extends BusinessRuleError {
+  constructor(message = "This notification has already reached its maximum number of retry attempts.") {
+    super(message);
+  }
+}

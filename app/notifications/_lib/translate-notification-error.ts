@@ -6,6 +6,7 @@ import {
   NotificationQueueEntryNotFoundError,
   NotificationQueueEntryNotPendingError,
   NotificationQueueEntryNotFailedError,
+  NotificationQueueRetryLimitExceededError,
 } from "@/modules/communication/domain/errors";
 
 export type ActionResult<T> =
@@ -26,6 +27,9 @@ export function translateNotificationError(error: unknown): ActionResult<never> 
   }
   if (error instanceof NotificationQueueEntryNotFailedError) {
     return { success: false, error: { code: "NOTIFICATION_QUEUE_ENTRY_NOT_FAILED", message: error.message } };
+  }
+  if (error instanceof NotificationQueueRetryLimitExceededError) {
+    return { success: false, error: { code: "NOTIFICATION_QUEUE_RETRY_LIMIT_EXCEEDED", message: error.message } };
   }
   if (error instanceof NotificationQueueEntryNotFoundError) {
     return { success: false, error: { code: "NOTIFICATION_QUEUE_ENTRY_NOT_FOUND", message: error.message } };
