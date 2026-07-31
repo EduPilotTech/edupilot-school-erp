@@ -35,3 +35,37 @@ export class NotificationNotFoundError extends NotFoundError {
     super(message);
   }
 }
+
+// --- NotificationTemplate (Phase 15A) ---------------------------------------------------------
+
+export class NotificationTemplateNotFoundError extends NotFoundError {
+  constructor(message = "Notification template not found.") {
+    super(message);
+  }
+}
+
+export class NotificationTemplateAlreadyExistsError extends BusinessRuleError {
+  constructor(message = "A notification template with this name and channel already exists.") {
+    super(message);
+  }
+}
+
+// --- NotificationQueue (Phase 15A) ------------------------------------------------------------
+
+export class NotificationQueueEntryNotFoundError extends NotFoundError {
+  constructor(message = "Notification queue entry not found.") {
+    super(message);
+  }
+}
+
+export class NotificationQueueEntryNotPendingError extends BusinessRuleError {
+  constructor(message = "This notification is not pending dispatch and cannot be cancelled.") {
+    super(message);
+  }
+}
+
+export class NotificationQueueEntryNotFailedError extends BusinessRuleError {
+  constructor(message = "This notification has not failed dispatch and cannot be retried.") {
+    super(message);
+  }
+}

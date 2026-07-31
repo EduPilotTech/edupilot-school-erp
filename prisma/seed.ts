@@ -920,6 +920,36 @@ const PERMISSIONS = [
     action: "view",
     roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL"] as const,
   },
+  // Phase 15A — Communication Hub. Admin-only management (no dedicated "Communication Manager"
+  // role was requested); notification.view additionally goes to PRINCIPAL for oversight, mirroring
+  // finance.report.view's / library.report.view's own precedent. Marking/reading one's OWN inbox
+  // notifications (mark-notification-read.service.ts, list-notifications.service.ts) predates this
+  // phase and was never permission-gated — these codes are for the admin-side Communication Hub
+  // (send/queue/template management, cross-tenant delivery reports), not personal inbox access.
+  {
+    code: "communication.manage",
+    resource: "communication",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "notification.manage",
+    resource: "notification",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "notification.view",
+    resource: "notification",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL"] as const,
+  },
+  {
+    code: "template.manage",
+    resource: "template",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
 ] as const;
 
 async function main() {

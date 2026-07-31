@@ -2,6 +2,13 @@ import type { NotificationChannelValue } from "./notification-delivery.entity";
 import type { NotificationPriorityValue, NotificationTypeValue } from "./notification.entity";
 
 export interface NotificationSendInput {
+  // Added in a Phase 15A fix: a channel sender that needs to resolve the recipient's own contact
+  // details (email/phone) must do so tenant-scoped, like every other lookup in this codebase
+  // (docs/CODING_STANDARDS.md §6 — never trust an unscoped lookup, even when a primary key alone
+  // would technically resolve the correct row). Callers of `dispatchToAllSenders` never construct
+  // this field themselves — it injects `tenantId` (which it already receives as its own parameter)
+  // before calling each sender, so this stays additive with no change to any producer.
+  tenantId: string;
   recipientUserProfileId: string;
   type: NotificationTypeValue;
   priority: NotificationPriorityValue;

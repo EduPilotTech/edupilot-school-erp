@@ -2,6 +2,48 @@
 
 All notable changes to EduPilot School ERP are documented in this file.
 
+## [v0.15.0] — Communication Hub
+
+Extends the existing Phase 9 notification foundation (`Notification`/`NotificationDelivery`/
+`NotificationSender`) — does not duplicate or replace it. Every module that already dispatches
+notifications (Library, Hostel, HR, Payroll, Transport) is unaffected.
+
+### Added
+- **Notification Templates**: per-channel message templates (Email/SMS/WhatsApp/In-App) with
+  named `{{variable}}` placeholders, rendered at send time. Full CRUD, one template per
+  (name, channel) pair.
+- **Notification Queue**: a scheduling/retry wrapper around the existing `Notification` record —
+  `queue()`/`send()`/`schedule()`/`retry()`/`cancel()`. A notification can be dispatched
+  immediately, deferred to a future time, or retried after a failure without ever creating a
+  duplicate record for the same logical message.
+- **Queue Engine**: `processQueueEntry`/`processDueNotificationQueue` — the shared dispatch loop
+  (also now used by the original `dispatchNotification()` helper, refactored to share it rather
+  than duplicate it) that fans a notification out to every active channel sender and records one
+  delivery attempt per channel.
+- **Template Engine**: pure `{{variable}}` substitution, unit-tested independently of any
+  database or provider.
+- **Provider Interfaces**: `EmailProvider` (`sendMail`, `sendAttachment`), `SMSProvider`
+  (`sendSMS`), `WhatsAppProvider` (`sendMessage`, `sendTemplate`, `sendMedia`) — TypeScript
+  contracts only, each with a stub implementation that honestly reports "not configured" rather
+  than a real integration. No SMTP, SMS gateway, WhatsApp Business API, or other external service
+  is called this release.
+- **Communication Dashboard**: Today's Notifications, Queued, Delivered, Failed, Pending.
+- **Notification Reports**: Notification Report, Delivery Report (with status-count summary),
+  Failed Notifications Report.
+- **RBAC**: `notification.view`, `notification.manage`, `template.manage`,
+  `communication.manage` — Admin-only management; `notification.view` additionally granted to
+  Principal for oversight.
+- **Tests**: DTO validation for `NotificationTemplate` and `NotificationQueue`, plus a dedicated
+  suite for the pure template-rendering helper. 480/480 tests passing project-wide.
+- **Build**: `prisma validate`, migration status, lint, typecheck, tests, and production build all
+  pass clean.
+
+### Fixed
+- A recipient-resolution bug caught during this release's own review, before shipping: the new
+  Email/SMS/WhatsApp channel senders resolved a notification's recipient via an unscoped lookup
+  rather than the tenant-scoped convention every other query in this codebase follows. Fixed by
+  adding `tenantId` to the shared `NotificationSender` dispatch contract.
+
 ## [v0.14.0] — Finance & Accounts
 
 A simple cash/bank ledger for private schools — not a double-entry accounting engine. No

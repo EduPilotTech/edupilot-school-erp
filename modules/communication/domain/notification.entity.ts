@@ -11,7 +11,18 @@ export type NotificationTypeValue =
   // Phase 13 — Leave Approved/Rejected, Salary Released, Document Generated. Reused for every
   // HR + Payroll notification since no separate HR_ALERT type was approved (see
   // prisma/schema.prisma's NotificationType enum comment).
-  | "PAYROLL_ALERT";
+  | "PAYROLL_ALERT"
+  // Phase 15A — Communication Hub. Only the events with no existing equivalent above; Fee
+  // Reminder/Attendance Alert/Homework Assigned/Exam Result/Transport Notice already map onto
+  // FEE_DUE/ATTENDANCE_ALERT/HOMEWORK/EXAM_RESULT/TRANSPORT_ALERT and are reused as-is (see
+  // prisma/schema.prisma's NotificationType enum comment, which this union must stay in sync
+  // with — the Prisma enum already carries these six values from the Phase 15A migration).
+  | "ADMISSION_CONFIRMATION"
+  | "FEE_PAYMENT_SUCCESS"
+  | "EXAM_SCHEDULE"
+  | "HOLIDAY_NOTICE"
+  | "BIRTHDAY_WISHES"
+  | "HOSTEL_NOTICE";
 
 export type NotificationPriorityValue = "LOW" | "NORMAL" | "HIGH" | "URGENT";
 

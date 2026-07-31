@@ -15,6 +15,14 @@ const LINKS: CommunicationHubLink[] = [
   { href: "/communication/calendar", label: "School Calendar", description: "Exams, PTMs, and events alongside holidays", permission: "communication.calendar.view" },
   { href: "/communication/messages", label: "Messages", description: "Conversations with parents", permission: "communication.message.view" },
   { href: "/settings/parents", label: "Parent Portal Accounts", description: "Grant guardians portal access", permission: "parent.account.link" },
+  // Phase 15A — Communication Hub (NotificationTemplate + NotificationQueue engine). Added onto
+  // this pre-existing Phase 9 hub rather than a separate competing hub page, same
+  // permission-filtered-link pattern as every entry above.
+  { href: "/dashboard/communication", label: "Communication Dashboard", description: "Today's notifications, queue, delivered, and failed counts", permission: "notification.view" },
+  { href: "/notifications", label: "Send Notification", description: "Compose and send or schedule a notification to a user", permission: "notification.manage" },
+  { href: "/templates", label: "Notification Templates", description: "Reusable message templates with placeholder variables", permission: "template.manage" },
+  { href: "/notification/history", label: "Notification History", description: "Every notification sent, with delivery attempts", permission: "notification.view" },
+  { href: "/dashboard/communication/reports", label: "Communication Reports", description: "Notification, delivery, and failed-notification reports", permission: "notification.view" },
 ];
 
 export default async function CommunicationHubPage() {

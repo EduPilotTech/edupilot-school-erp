@@ -208,6 +208,8 @@ model Tenant {
   expenseCategories           ExpenseCategory[]
   incomeEntries               Income[]
   expenseEntries              Expense[]
+  notificationTemplates       NotificationTemplate[]
+  notificationQueues          NotificationQueue[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -2320,6 +2322,15 @@ enum NotificationType {
   // Phase 13 — Leave Approved/Rejected, Salary Released, Document Generated. Explicitly required
   // by the approved Phase 13 architecture decisions ("Create PAYROLL_ALERT").
   PAYROLL_ALERT
+  // Phase 15A — Communication Hub. Only the events with no existing equivalent: Fee Reminder,
+  // Attendance Alert, Homework Assigned, Exam Result, and Transport Notice already map onto
+  // FEE_DUE/ATTENDANCE_ALERT/HOMEWORK/EXAM_RESULT/TRANSPORT_ALERT above and are reused as-is.
+  ADMISSION_CONFIRMATION
+  FEE_PAYMENT_SUCCESS
+  EXAM_SCHEDULE
+  HOLIDAY_NOTICE
+  BIRTHDAY_WISHES
+  HOSTEL_NOTICE
 }
 
 enum NotificationPriority {
@@ -2599,6 +2610,9 @@ model Notification {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   deliveries NotificationDelivery[]
+  // Phase 15A — additive back-relation for NotificationQueue's scheduling/retry wrapper. At most
+  // one queue row per Notification (see NotificationQueue's own @@unique([tenantId, notificationId])).
+  queueEntry NotificationQueue?
 
   @@unique([tenantId, id])
   @@index([tenantId, recipientUserProfileId, readAt])
@@ -5038,4 +5052,109 @@ model Expense {
   @@index([tenantId, expenseCategoryId])
   @@index([tenantId, financeAccountId])
   @@map("expense_entries")
+}
+
+// --- Phase 15A — Communication Hub (modules/communication, extended) --------------------------
+//
+// EXTENDS the existing Phase 9 notification foundation — does NOT duplicate it. `Notification`,
+// `NotificationDelivery`, `NotificationChannel`, `NotificationDeliveryStatus`, `NotificationType`,
+// and `NotificationPriority` already exist and are reused unchanged (every module since Phase 9 —
+// Library, Hostel, HR, Payroll, Transport — already calls `dispatchNotification()`, which creates
+// a `Notification` + one `NotificationDelivery` row per attempted channel). Building a second,
+// differently-named `Notification`-shaped model here would create two parallel, inconsistent
+// notification systems — exactly the kind of duplication this project's own rules forbid.
+//
+// What Phase 15A actually adds, additively:
+//   - `NotificationTemplate` — genuinely new: per-channel message templates with named
+//     placeholder variables, so a producer can render "Fee due of {{amount}} on {{dueDate}}"
+//     instead of hand-building every string. Nothing like this existed before.
+//   - `NotificationQueue` — genuinely new: a scheduling/retry wrapper around one `Notification`
+//     (one queue row per Notification, not per delivery attempt — `NotificationDelivery` already
+//     owns the per-channel-attempt record). This is what makes `schedule()`/`retry()`/`cancel()`
+//     meaningful: a Notification can be created now but its actual dispatch deferred to
+//     `scheduledAt`, and a failed dispatch can be retried with an incremented `retryCount` without
+//     ever creating a second Notification for the same logical message.
+//   - Six new `NotificationType` values for events this phase's spec names that have no existing
+//     equivalent (ADMISSION_CONFIRMATION, FEE_PAYMENT_SUCCESS, EXAM_SCHEDULE, HOLIDAY_NOTICE,
+//     BIRTHDAY_WISHES, HOSTEL_NOTICE). The spec's other named events — Fee Reminder, Attendance
+//     Alert, Homework Assigned, Exam Result, Transport Notice — already have an exact existing
+//     NotificationType (FEE_DUE, ATTENDANCE_ALERT, HOMEWORK, EXAM_RESULT, TRANSPORT_ALERT
+//     respectively) and are reused, not redefined.
+//
+// Email/SMS/WhatsApp Provider Interfaces (EmailProvider/SMSProvider/WhatsAppProvider) are
+// TypeScript-only application/domain-layer contracts — see modules/communication/domain/ — with
+// no schema footprint of their own; they plug into the existing `NotificationSender` extension
+// point the same way `InAppNotificationSender` already does. Per this phase's explicit scope, no
+// real Email/SMS/WhatsApp integration is implemented — only the interfaces plus a
+// not-yet-configured stub implementation of each, so the full Template -> Queue -> Send pipeline
+// is exercisable end-to-end without silently pretending an unconfigured channel succeeded.
+
+model NotificationTemplate {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  name    String
+  channel NotificationChannel
+
+  // Only meaningful for EMAIL — null for SMS/WhatsApp/In-App templates.
+  subject String?
+
+  // The template body, containing `{{variableName}}` placeholders resolved at send time.
+  message String
+
+  // Named placeholders this template expects (e.g. ["studentName", "amount", "dueDate"]) — purely
+  // documentation/validation metadata for the template-editing UI; rendering itself does simple
+  // string substitution against whatever variables a caller actually supplies.
+  variables Json @default("[]")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name, channel])
+  @@index([tenantId, channel, isActive])
+  @@map("notification_templates")
+}
+
+enum NotificationQueueStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+// One row per Notification awaiting or having completed dispatch scheduling — NOT one row per
+// channel-attempt (that's `NotificationDelivery`'s job, unchanged). `queue()` creates a
+// Notification + this row (status PENDING, scheduledAt = now or a future time — `schedule()` is
+// just `queue()` with a future `scheduledAt`); a queue processor dispatches every due PENDING row
+// through `dispatchNotification`'s existing sender loop, then sets `processedAt`/`status`;
+// `retry()` increments `retryCount` and resets a FAILED row to PENDING with a new `scheduledAt`;
+// `cancel()` sets CANCELLED without dispatching.
+model NotificationQueue {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  notificationId String       @map("notification_id") @db.Uuid
+  notification   Notification @relation(fields: [tenantId, notificationId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  retryCount  Int                     @default(0) @map("retry_count")
+  scheduledAt DateTime                @map("scheduled_at") @db.Timestamptz(3)
+  processedAt DateTime?               @map("processed_at") @db.Timestamptz(3)
+  status      NotificationQueueStatus @default(PENDING)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, notificationId])
+  @@index([tenantId, status, scheduledAt])
+  @@map("notification_queue")
 }
