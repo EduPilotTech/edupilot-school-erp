@@ -203,6 +203,11 @@ model Tenant {
   salaryPayments              SalaryPayment[]
   payrollLedgerEntries        PayrollLedgerEntry[]
   payrollAuditLogs            PayrollAuditLog[]
+  financeAccounts             FinanceAccount[]
+  incomeCategories            IncomeCategory[]
+  expenseCategories           ExpenseCategory[]
+  incomeEntries               Income[]
+  expenseEntries              Expense[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -240,25 +245,30 @@ model School {
   createdBy String?   @map("created_by") @db.Uuid
   updatedBy String?   @map("updated_by") @db.Uuid
 
-  academicSessions AcademicSession[]
-  classes          Class[]
-  subjects         Subject[]
-  classrooms       Classroom[]
-  examTypes        ExamType[]
-  feeCategories    FeeCategory[]
-  routes           Route[]
-  hostels          Hostel[]
-  libraries        Library[]
-  bookCategories   BookCategory[]
-  authors          Author[]
-  publishers       Publisher[]
-  departments      Department[]
-  designations     Designation[]
-  employmentTypes  EmploymentType[]
-  employees        Employee[]
-  leaveTypes       LeaveType[]
-  salaryStructures SalaryStructure[]
-  payrollRuns      PayrollRun[]
+  academicSessions  AcademicSession[]
+  classes           Class[]
+  subjects          Subject[]
+  classrooms        Classroom[]
+  examTypes         ExamType[]
+  feeCategories     FeeCategory[]
+  routes            Route[]
+  hostels           Hostel[]
+  libraries         Library[]
+  bookCategories    BookCategory[]
+  authors           Author[]
+  publishers        Publisher[]
+  departments       Department[]
+  designations      Designation[]
+  employmentTypes   EmploymentType[]
+  employees         Employee[]
+  leaveTypes        LeaveType[]
+  salaryStructures  SalaryStructure[]
+  payrollRuns       PayrollRun[]
+  financeAccounts   FinanceAccount[]
+  incomeCategories  IncomeCategory[]
+  expenseCategories ExpenseCategory[]
+  incomeEntries     Income[]
+  expenseEntries    Expense[]
 
   // Composite unique alongside the PK — required so AcademicSession can enforce, via a real
   // foreign key, that its (tenantId, schoolId) pair always points to a School actually owned
@@ -325,6 +335,8 @@ model AcademicSession {
   studentHostelAssignments    StudentHostelAssignment[]
   hostelAttendances           HostelAttendance[]
   hostelFeeRules              HostelFeeRule[]
+  incomeEntries               Income[]
+  expenseEntries              Expense[]
 
   // Added in Sprint 4 alongside @@unique([tenantId, sessionName]): a compound unique so
   // Class/Enrollment can reference AcademicSession via the same composite-FK pattern already
@@ -4830,4 +4842,200 @@ model PayrollAuditLog {
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, createdAt])
   @@map("payroll_audit_logs")
+}
+
+// --- Phase 14 — Finance & Accounts (modules/finance) ------------------------------------------
+//
+// Explicitly a SIMPLE cash/bank ledger for a private school, not a double-entry accounting
+// engine — per the approved Phase 14 scope: no GST/VAT/TDS, no Journal Vouchers, no Purchase
+// Orders, no Asset Depreciation, no Budget module, no multi-currency. Income/Expense are flat,
+// independently editable transaction rows (unlike Payroll's immutable-once-settled discipline —
+// there is no audit-log/ledger-entry model requested for this phase, so a running
+// FinanceAccount.currentBalance is maintained directly by the application layer, transactionally,
+// exactly like EmployeeLoan.outstandingAmount / HostelBed.status's own "maintained not derived"
+// precedent, rather than computed by summing history on every read).
+//
+// FinanceAccount/IncomeCategory/ExpenseCategory are school-scoped lookup/master data (mirror
+// FeeCategory/Department — no academicSessionId, since a bank account or a category name doesn't
+// reset each year). Income/Expense are the transactional records and DO carry academicSessionId
+// (mirrors FeeInvoice) so every report can be filtered/scoped by session.
+
+enum FinanceAccountType {
+  CASH
+  BANK
+}
+
+enum FinancePaymentMode {
+  CASH
+  BANK_TRANSFER
+  CHEQUE
+  UPI
+  CARD
+  OTHER
+}
+
+model FinanceAccount {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name        String
+  accountType FinanceAccountType @map("account_type")
+
+  openingBalance Decimal @default(0) @map("opening_balance") @db.Decimal(14, 2)
+  // Maintained transactionally by modules/finance's Income/Expense services (incremented on
+  // Income, decremented on Expense, adjusted on edit/soft-delete) — never recomputed by summing
+  // history on read.
+  currentBalance Decimal @default(0) @map("current_balance") @db.Decimal(14, 2)
+
+  isDefault Boolean @default(false) @map("is_default")
+  isActive  Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  incomeEntries  Income[]
+  expenseEntries Expense[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, schoolId])
+  @@map("finance_accounts")
+}
+
+model IncomeCategory {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  incomeEntries Income[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("income_categories")
+}
+
+model ExpenseCategory {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  name String
+  code String
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  expenseEntries Expense[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, code])
+  @@index([tenantId, schoolId])
+  @@map("expense_categories")
+}
+
+model Income {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  incomeCategoryId String         @map("income_category_id") @db.Uuid
+  incomeCategory   IncomeCategory @relation(fields: [tenantId, incomeCategoryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  financeAccountId String         @map("finance_account_id") @db.Uuid
+  financeAccount   FinanceAccount @relation(fields: [tenantId, financeAccountId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  amount      Decimal  @db.Decimal(14, 2)
+  date        DateTime @db.Date
+  description String?
+  referenceNo String?  @map("reference_no")
+
+  // Raw, unconstrained UUID — mirrors PerformanceReview.reviewedBy / TeacherAttendance.markedBy's
+  // own "who performed this" precedent (a UserProfile id, not enforced by a FK).
+  collectedBy String? @map("collected_by") @db.Uuid
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, schoolId, date])
+  @@index([tenantId, academicSessionId])
+  @@index([tenantId, incomeCategoryId])
+  @@index([tenantId, financeAccountId])
+  @@map("income_entries")
+}
+
+model Expense {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  schoolId String @map("school_id") @db.Uuid
+  school   School @relation(fields: [tenantId, schoolId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  academicSessionId String          @map("academic_session_id") @db.Uuid
+  academicSession   AcademicSession @relation(fields: [tenantId, academicSessionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  expenseCategoryId String          @map("expense_category_id") @db.Uuid
+  expenseCategory   ExpenseCategory @relation(fields: [tenantId, expenseCategoryId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  financeAccountId String         @map("finance_account_id") @db.Uuid
+  financeAccount   FinanceAccount @relation(fields: [tenantId, financeAccountId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  amount      Decimal            @db.Decimal(14, 2)
+  date        DateTime           @db.Date
+  vendor      String?
+  description String?
+  paymentMode FinancePaymentMode @map("payment_mode")
+  referenceNo String?            @map("reference_no")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, id])
+  @@index([tenantId, schoolId, date])
+  @@index([tenantId, academicSessionId])
+  @@index([tenantId, expenseCategoryId])
+  @@index([tenantId, financeAccountId])
+  @@map("expense_entries")
 }

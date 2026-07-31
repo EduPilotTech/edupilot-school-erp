@@ -892,6 +892,34 @@ const PERMISSIONS = [
     action: "access",
     roles: EMPLOYEE_ROLE_CODES,
   },
+  // Phase 14 — Finance & Accounts. A simple cash/bank ledger for private schools, restricted to
+  // Admin + the two existing roles the spec names explicitly (ACCOUNTANT, seeded since Phase 8;
+  // PRINCIPAL, seeded since Phase 1) — no new role needed, unlike HR/Payroll/Hostel/Transport/
+  // Library, since "Admin, Accountant, Principal" was the whole access list this phase asked for.
+  {
+    code: "finance.master.manage",
+    resource: "finance.master",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "finance.income.manage",
+    resource: "finance.income",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "finance.expense.manage",
+    resource: "finance.expense",
+    action: "manage",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT"] as const,
+  },
+  {
+    code: "finance.report.view",
+    resource: "finance.report",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "ACCOUNTANT", "PRINCIPAL"] as const,
+  },
 ] as const;
 
 async function main() {

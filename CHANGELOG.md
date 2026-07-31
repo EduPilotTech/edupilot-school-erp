@@ -2,6 +2,48 @@
 
 All notable changes to EduPilot School ERP are documented in this file.
 
+## [v0.14.0] — Finance & Accounts
+
+A simple cash/bank ledger for private schools — not a double-entry accounting engine. No
+GST/VAT/TDS, no Journal Vouchers, no Purchase Orders, no Asset Depreciation, no Budget module,
+no multi-currency, no complex tax engine.
+
+### Added
+- **Database**: `FinanceAccount` (CASH/BANK, opening/current balance, single-default-account
+  invariant), `IncomeCategory` and `ExpenseCategory` (school-scoped lookup tables), `Income` and
+  `Expense` (tenant + academic-session-scoped transaction records, soft-deleted, created/updated
+  by). `FinanceAccount.currentBalance` is maintained transactionally on every Income/Expense
+  create/update/delete via a pure, unit-tested balance-delta helper — never recomputed by summing
+  history on read.
+- **Finance Accounts**: create/update/deactivate bank and cash accounts; opening balance sets the
+  starting running balance; only one account may be marked default at a time.
+- **Income & Expense**: full CRUD against a Category, a Finance Account, and an Academic Session,
+  with amount/date/description/reference number (Income also records who collected it; Expense
+  also records vendor and payment mode).
+- **Income Categories & Expense Categories**: admin-managed master data (Admission Fee, Tuition
+  Fee, Transport Fee, Hostel Fee, Exam Fee, Library Fee, Donation, Misc Income / Salary, Electric
+  Bill, Internet, Office Expense, Maintenance, Stationery, Marketing, Cleaning, Transport, Misc
+  Expense are seeded as illustrative starting categories, not hardcoded).
+- **Finance Dashboard**: Today's Income, Today's Expense, Monthly Income, Monthly Expense, Current
+  Cash Balance, Current Bank Balance — one composed read.
+- **Reports**: Income Report, Expense Report, Category-wise Income, Category-wise Expense, and a
+  12-month Monthly Summary — each filterable by date range, category, and academic session.
+- **Export**: Print, PDF (client-side, reusing the existing jsPDF + html-to-image stack already
+  used for Fee receipts and Payslips), and CSV — no server round-trip, no new dependency added for
+  export.
+- **RBAC**: `finance.master.manage`, `finance.income.manage`, `finance.expense.manage`,
+  `finance.report.view` — granted to Admin, the existing Accountant role, and (report viewing
+  only) Principal. No new role was needed.
+- **Tests**: DTO validation tests for every new schema, plus a dedicated business-logic test suite
+  for the balance-delta helper (record/update/delete adjustment math, including the reversal path
+  when an entry's amount or account changes).
+
+### Security note
+Excel export was deliberately implemented as CSV rather than a real `.xlsx` file: the only
+`xlsx`-writing package published on the npm registry carries two unpatched high-severity
+CVEs (prototype pollution, ReDoS). It was evaluated, found vulnerable, and removed. CSV opens
+natively in Excel, Sheets, and Numbers and requires no dependency.
+
 ## [Unreleased] — v0.4.0-user-management
 
 ### Added
