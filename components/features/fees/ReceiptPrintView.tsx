@@ -8,6 +8,8 @@ import type { FeePaymentDTO } from "@/modules/fees/application/dto/fee-payment.d
 interface ReceiptPrintViewProps {
   schoolName: string;
   schoolAddress: string;
+  logoUrl?: string | null;
+  footerText?: string | null;
   payment: FeePaymentDTO;
   studentName: string;
   admissionNumber: string;

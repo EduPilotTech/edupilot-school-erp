@@ -19,11 +19,14 @@ export interface ForgotPasswordInput {
 // for an email with no matching account), and this wrapper preserves that property by never
 // adding an "email not found" branch of its own.
 //
-// `redirectTo` (the page Supabase sends the user to after clicking the reset link) is
-// intentionally omitted for now — no such page exists yet (out of scope this sprint; "no UI").
-// Supabase falls back to its configured project Site URL until a real reset-password page is
-// built and wired in here.
-export async function forgotPassword(input: ForgotPasswordInput): Promise<AuthResult<null>> {
+// Commercial QA — Step 1 (Authentication): `redirectTo` now points at the real reset-password
+// page (app/(auth)/reset-password/page.tsx) — the "no UI" gap this comment used to document is
+// closed. Caller supplies the absolute URL (Server Actions have no direct access to the
+// request's own origin the way a Route Handler does — see app/(auth)/actions.ts's getOrigin()).
+export async function forgotPassword(
+  input: ForgotPasswordInput,
+  redirectTo: string
+): Promise<AuthResult<null>> {
   const parsed = forgotPasswordSchema.safeParse(input);
 
   if (!parsed.success) {
@@ -37,7 +40,7 @@ export async function forgotPassword(input: ForgotPasswordInput): Promise<AuthRe
   }
 
   const supabase = await supabaseServer();
-  const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email);
+  const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, { redirectTo });
 
   if (error) {
     const mappedError: AuthError =

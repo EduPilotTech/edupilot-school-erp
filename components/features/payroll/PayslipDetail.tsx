@@ -7,12 +7,14 @@ import type { PayslipWithComponentsDTO } from "@/modules/payroll/application/dto
 import type { SalaryPaymentDTO } from "@/modules/payroll/application/dto/salary-payment.dto";
 import { StatusBadge } from "./StatusBadge";
 import { PayslipPrintControls } from "./PayslipPrintControls";
+import { LetterheadHeader, LetterheadFooter, type LetterheadBranding } from "@/components/features/branding/Letterhead";
 
 interface PayslipDetailProps {
   payslip: PayslipWithComponentsDTO;
   payments: SalaryPaymentDTO[];
   canManagePayments: boolean;
   employeeLabel: string;
+  branding: LetterheadBranding;
 }
 
 const PAYMENT_MODES = ["BANK_TRANSFER", "CASH", "CHEQUE", "UPI", "OTHER"] as const;
@@ -20,7 +22,7 @@ const PAYMENT_MODES = ["BANK_TRANSFER", "CASH", "CHEQUE", "UPI", "OTHER"] as con
 // Reversal follows components/features/fees/PaymentHistoryTable.tsx's exact precedent: a
 // window.prompt() for the reason (reverseSalaryPaymentSchema requires a non-empty one), status
 // flip only — the SalaryPayment row itself is never edited or deleted.
-export function PayslipDetail({ payslip, payments: initialPayments, canManagePayments, employeeLabel }: PayslipDetailProps) {
+export function PayslipDetail({ payslip, payments: initialPayments, canManagePayments, employeeLabel, branding }: PayslipDetailProps) {
   const router = useRouter();
   const printableRef = useRef<HTMLDivElement>(null);
   const [payments, setPayments] = useState(initialPayments);
@@ -90,7 +92,9 @@ export function PayslipDetail({ payslip, payments: initialPayments, canManagePay
       </div>
 
       <div ref={printableRef} className="rounded-xl border border-zinc-200 bg-white p-5">
-        <div className="flex items-center justify-between">
+        <LetterheadHeader branding={branding} documentTitle="Salary Slip" />
+
+        <div className="mt-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Earnings & Deductions</h2>
             <p className="text-sm text-zinc-500">{employeeLabel} — {payslip.billingPeriod}</p>
@@ -155,6 +159,8 @@ export function PayslipDetail({ payslip, payments: initialPayments, canManagePay
             <dd className="text-base font-semibold text-zinc-900">₹{payslip.netPay.toFixed(2)}</dd>
           </div>
         </dl>
+
+        <LetterheadFooter branding={branding} signatureLabel="Authorized Signatory" />
       </div>
 
       <div className="rounded-xl border border-zinc-200 bg-white p-5">

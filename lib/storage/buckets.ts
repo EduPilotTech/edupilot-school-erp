@@ -14,3 +14,7 @@ export const EMPLOYEE_DOCUMENTS_BUCKET = "employee-documents";
 // above: this bucket (and its Storage RLS policies) must be created in the Supabase project
 // before any upload against it will succeed at runtime.
 export const PLATFORM_INVOICES_BUCKET = "platform-invoices";
+
+// Product Completion Phase 17 Bundle A — School Branding assets (logo, principal signature,
+// school seal). Same "must be provisioned externally" caveat as every bucket above.
+export const SCHOOL_BRANDING_BUCKET = "school-branding";

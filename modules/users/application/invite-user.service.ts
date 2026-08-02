@@ -57,10 +57,11 @@ export async function inviteUser(
     };
   }
 
-  const inviteResult = await inviteUserByEmail(parsed.data.email, {
-    tenant_id: context.tenantId,
-    full_name: parsed.data.fullName,
-  });
+  const inviteResult = await inviteUserByEmail(
+    parsed.data.email,
+    { tenant_id: context.tenantId, full_name: parsed.data.fullName },
+    context.tenantId
+  );
 
   if (!inviteResult.success) {
     return {

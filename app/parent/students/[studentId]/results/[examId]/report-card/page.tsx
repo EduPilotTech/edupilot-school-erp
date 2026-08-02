@@ -1,6 +1,7 @@
-import { requireAuthContext } from "@/lib/auth/auth-context";
+import { requireAuthContext, getCurrentSchool } from "@/lib/auth/auth-context";
 import { requirePermission, getAuthorizationContext, can } from "@/lib/auth/rbac";
 import { getMyReportCard } from "@/modules/parents/application/get-my-report-card.service";
+import { getSchoolBranding } from "@/modules/branding/application/get-school-branding.service";
 import { ReportCardPrintView } from "@/components/features/examinations/ReportCardPrintView";
 import "@/app/examinations/report-cards/report-card-print.css";
 
@@ -21,9 +22,22 @@ export default async function ParentReportCardPage({ params }: PageProps) {
     userProfileId: authContext.userId,
   });
 
+  const school = await getCurrentSchool();
+  const branding = await getSchoolBranding({ tenantId: authContext.tenantId, school });
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
-      <ReportCardPrintView reportCard={reportCard} canPrint={can(authorization, "parent.reportcard.print")} />
+      <ReportCardPrintView
+        reportCard={reportCard}
+        canPrint={can(authorization, "parent.reportcard.print")}
+        branding={{
+          logoUrl: branding.logoUrl,
+          themeColor: branding.themeColor,
+          signatureUrl: branding.signatureUrl,
+          sealUrl: branding.sealUrl,
+          footerText: branding.footerText,
+        }}
+      />
     </main>
   );
 }

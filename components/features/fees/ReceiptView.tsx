@@ -9,6 +9,10 @@ export interface ReceiptLineItem {
 interface ReceiptContentProps {
   schoolName: string;
   schoolAddress: string;
+  // Product Completion Phase 17 Bundle A — School Branding. Optional so every existing caller of
+  // ReceiptView/ReceiptPrintView still type-checks without passing them.
+  logoUrl?: string | null;
+  footerText?: string | null;
   payment: FeePaymentDTO;
   studentName: string;
   admissionNumber: string;
@@ -19,6 +23,8 @@ interface ReceiptContentProps {
 function ReceiptContent({
   schoolName,
   schoolAddress,
+  logoUrl,
+  footerText,
   payment,
   studentName,
   admissionNumber,
@@ -28,6 +34,10 @@ function ReceiptContent({
   return (
     <div className="flex flex-col gap-3">
       <div className="text-center">
+        {logoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element -- signed URL from Supabase Storage.
+          <img src={logoUrl} alt="" className="mx-auto mb-1 h-10 w-10 object-contain" />
+        )}
         <p className="text-lg font-semibold text-zinc-900">{schoolName}</p>
         <p className="text-xs text-zinc-500">{schoolAddress}</p>
       </div>
@@ -69,6 +79,11 @@ function ReceiptContent({
         </p>
       )}
       {payment.remarks && <p className="text-center text-xs text-zinc-500">{payment.remarks}</p>}
+      {footerText && (
+        <p className="border-t border-dashed border-zinc-300 pt-2 text-center text-xs text-zinc-400">
+          {footerText}
+        </p>
+      )}
     </div>
   );
 }

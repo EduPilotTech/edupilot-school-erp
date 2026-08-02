@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import Link from "next/link";
 
 const FOUNDATION_VERSION = "v0.1.0-foundation";
 const RELEASE_TAG = "v0.1.0";
@@ -24,13 +25,14 @@ const STATS: { label: string; value: string }[] = [
 ];
 
 const COMPLETED_MODULES = [
-  "Tenant",
-  "School",
-  "Academic Session",
-  "Multi Tenant Foundation",
-  "Prisma Configuration",
-  "PostgreSQL",
-  "Supabase Ready",
+  "Students & Admissions",
+  "Attendance & Timetable",
+  "Examinations",
+  "Fee Management & Finance",
+  "HR & Payroll",
+  "Library, Transport & Hostel",
+  "Parent & Communication Portal",
+  "Payment & Subscription Billing",
 ];
 
 type RoadmapStatus = "Completed" | "Next" | "Upcoming";
@@ -48,14 +50,14 @@ const ROADMAP_DOT_STYLES: Record<RoadmapStatus, string> = {
 };
 
 const ROADMAP: { phase: number; title: string; status: RoadmapStatus }[] = [
-  { phase: 0, title: "Foundation", status: "Completed" },
-  { phase: 1, title: "RBAC", status: "Next" },
-  { phase: 2, title: "Authentication", status: "Upcoming" },
-  { phase: 3, title: "School Configuration", status: "Upcoming" },
-  { phase: 4, title: "Student Management", status: "Upcoming" },
-  { phase: 5, title: "Attendance", status: "Upcoming" },
-  { phase: 6, title: "Fee Management", status: "Upcoming" },
-  { phase: 7, title: "Examination", status: "Upcoming" },
+  { phase: 0, title: "Foundation & Authentication", status: "Completed" },
+  { phase: 1, title: "Students, Academics & Attendance", status: "Completed" },
+  { phase: 2, title: "Examinations & Fee Management", status: "Completed" },
+  { phase: 3, title: "Parent Portal & Communication", status: "Completed" },
+  { phase: 4, title: "Transport, Hostel & Library", status: "Completed" },
+  { phase: 5, title: "HR & Payroll", status: "Completed" },
+  { phase: 6, title: "Payment & Subscription Billing", status: "Completed" },
+  { phase: 7, title: "Scheduled Automation", status: "Next" },
 ];
 
 const ARCHITECTURE_FLOW = [
@@ -97,13 +99,12 @@ export default function Home() {
             <span className="rounded-full border border-zinc-800 px-2.5 py-0.5 text-xs font-medium text-zinc-400">
               {RELEASE_TAG}
             </span>
-            <button
-              type="button"
-              disabled
-              className="cursor-not-allowed rounded-lg border border-zinc-800 px-4 py-1.5 text-sm font-medium text-zinc-500"
+            <Link
+              href="/login"
+              className="rounded-lg border border-zinc-800 px-4 py-1.5 text-sm font-medium text-zinc-200 hover:border-zinc-700"
             >
               Login
-            </button>
+            </Link>
           </div>
         </div>
       </header>
@@ -111,7 +112,7 @@ export default function Home() {
       <main className="mx-auto flex max-w-6xl flex-col gap-28 px-6 py-24">
         <section className="flex flex-col items-center gap-6 text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-4 py-1 text-sm font-medium text-emerald-400">
-            Foundation Completed
+            Live
           </span>
 
           <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-zinc-50 sm:text-6xl">
@@ -128,18 +129,18 @@ export default function Home() {
           </p>
 
           <div className="mt-2 flex flex-wrap items-center justify-center gap-4">
-            <a
-              href="#"
+            <Link
+              href="/register"
               className="rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-400"
             >
-              View Documentation
-            </a>
-            <a
-              href="#"
+              Register Your School
+            </Link>
+            <Link
+              href="/login"
               className="rounded-lg border border-zinc-800 px-5 py-2.5 text-sm font-medium text-zinc-200 hover:border-zinc-700"
             >
-              GitHub Repository
-            </a>
+              Sign In
+            </Link>
           </div>
         </section>
 

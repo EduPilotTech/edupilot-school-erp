@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAuthContext } from "@/lib/auth/auth-context";
+import { requireAuthContext, getCurrentSchool } from "@/lib/auth/auth-context";
 import { requirePermission, getAuthorizationContext, can } from "@/lib/auth/rbac";
 import { getPayslip } from "@/modules/payroll/application/payroll-run.service";
 import { listSalaryPayments } from "@/modules/payroll/application/salary-payment.service";
 import { getEmployeeById } from "@/modules/hr/application/employee.service";
 import { EmployeeNotFoundError } from "@/modules/hr/domain/errors";
 import { PayslipDetail } from "@/components/features/payroll/PayslipDetail";
+import { getSchoolBranding } from "@/modules/branding/application/get-school-branding.service";
 
 interface PayslipDetailPageProps {
   params: Promise<{ payslipId: string }>;
@@ -37,6 +38,9 @@ export default async function PayslipDetailPage({ params }: PayslipDetailPagePro
     if (!(error instanceof EmployeeNotFoundError)) throw error;
   }
 
+  const school = await getCurrentSchool();
+  const branding = await getSchoolBranding({ tenantId: authContext.tenantId, school });
+
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
       <Link href={`/payroll/runs/${payslip.payrollRunId}`} className="text-sm text-blue-600 hover:underline">
@@ -46,7 +50,24 @@ export default async function PayslipDetailPage({ params }: PayslipDetailPagePro
       <p className="mt-1 text-sm text-zinc-500">{employeeLabel}</p>
 
       <div className="mt-6">
-        <PayslipDetail payslip={payslip} payments={payments} canManagePayments={canManagePayments} employeeLabel={employeeLabel} />
+        <PayslipDetail
+          payslip={payslip}
+          payments={payments}
+          canManagePayments={canManagePayments}
+          employeeLabel={employeeLabel}
+          branding={{
+            schoolName: branding.schoolName,
+            address: `${branding.address}, ${branding.city}, ${branding.state} ${branding.postalCode}`,
+            phone: branding.phone,
+            email: branding.email,
+            logoUrl: branding.logoUrl,
+            themeColor: branding.themeColor,
+            headerText: branding.headerText,
+            footerText: branding.footerText,
+            signatureUrl: branding.signatureUrl,
+            sealUrl: branding.sealUrl,
+          }}
+        />
       </div>
     </main>
   );

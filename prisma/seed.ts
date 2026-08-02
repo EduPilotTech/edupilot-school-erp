@@ -101,6 +101,15 @@ const PERMISSIONS = [
     action: "print",
     roles: [...ADMIN_ROLE_CODES, "RECEPTIONIST"] as const,
   },
+  // Completion Pass — Transfer Certificate / Certificate branding (checklist #10, #11). One code
+  // covers both document types — same "print an official student document" action category as
+  // student.idcard.print, same role set.
+  {
+    code: "student.certificate.print",
+    resource: "student.certificate",
+    action: "print",
+    roles: [...ADMIN_ROLE_CODES, "RECEPTIONIST"] as const,
+  },
   // Phase 5 — Attendance Management. Two resources (student vs. teacher attendance), each split
   // into mark/view so Receptionist can be granted view-only per the task's own 5-tier requirement
   // ("Receptionist (View Only)"). Teacher/Class Teacher can mark and view STUDENT attendance
@@ -158,6 +167,45 @@ const PERMISSIONS = [
     action: "view",
     roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
   },
+  // Academic Setup — Academic Session / Class / Section master data (the data Student Admission's
+  // dropdowns read from). Distinct resource names from "classroom" — a Classroom is a physical
+  // room, these are the academic-structure equivalents.
+  {
+    code: "academic-session.manage",
+    resource: "academic-session",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "academic-session.view",
+    resource: "academic-session",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "class.manage",
+    resource: "class",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "class.view",
+    resource: "class",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
+  {
+    code: "section.manage",
+    resource: "section",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "section.view",
+    resource: "section",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL", "TEACHER", "CLASS_TEACHER"] as const,
+  },
   {
     code: "teacher.manage",
     resource: "teacher",
@@ -181,6 +229,21 @@ const PERMISSIONS = [
     resource: "school.config",
     action: "manage",
     roles: ADMIN_ROLE_CODES,
+  },
+  // Product Completion Phase 17 Bundle A — School Branding (logo, letterhead, theme color,
+  // social links). Distinct resource from "school.config" (Phase 6 timetable-config settings) —
+  // branding is presentation-layer, not the school's academic-year configuration.
+  {
+    code: "school.branding.manage",
+    resource: "school.branding",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "school.branding.view",
+    resource: "school.branding",
+    action: "view",
+    roles: [...ADMIN_ROLE_CODES, "PRINCIPAL", "VICE_PRINCIPAL"] as const,
   },
   {
     code: "timetable.manage",

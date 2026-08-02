@@ -23,7 +23,19 @@ export function IdCardBack({ card }: IdCardBackProps) {
 
       <div className="flex items-end justify-between text-[2.2mm] text-zinc-500">
         <div className="border-t border-zinc-300 pt-[0.8mm]">Student Signature</div>
-        <div className="border-t border-zinc-300 pt-[0.8mm]">Authorized Signature</div>
+        <div className="flex items-end gap-[1.5mm]">
+          {card.school.sealUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- fixed-size print layout.
+            <img src={card.school.sealUrl} alt="" className="h-[7mm] w-[7mm] object-contain opacity-80" />
+          )}
+          <div className="flex flex-col items-center">
+            {card.school.signatureUrl && (
+              // eslint-disable-next-line @next/next/no-img-element -- fixed-size print layout.
+              <img src={card.school.signatureUrl} alt="" className="h-[4mm] w-[14mm] object-contain" />
+            )}
+            <div className="w-[14mm] border-t border-zinc-300 pt-[0.8mm] text-center">Authorized Signature</div>
+          </div>
+        </div>
       </div>
     </div>
   );

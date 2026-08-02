@@ -20,7 +20,8 @@ export interface InviteUserByEmailResult {
 
 export async function inviteUserByEmail(
   email: string,
-  metadata: Record<string, unknown>
+  metadata: Record<string, unknown>,
+  tenantId: string
 ): Promise<{ success: true; data: InviteUserByEmailResult } | { success: false; message: string }> {
   const admin = supabaseAdmin();
 
@@ -35,6 +36,18 @@ export async function inviteUserByEmail(
   if (error || !data.user) {
     return { success: false, message: error?.message ?? "Unknown error inviting user." };
   }
+
+  // Completion Pass — Storage RLS verification (checklist #14): `metadata`/`data` above sets
+  // `user_metadata`, which the user can later overwrite themselves via
+  // `supabase.auth.updateUser()` — unsafe to use as a Storage RLS tenant claim (see
+  // setUserTenantMetadata's own comment). A separate, admin-only `app_metadata` write is
+  // required; best-effort here (unlike register-school.service.ts's version) since the invited
+  // user and UserProfile row are both already fully created at this point — failing the whole
+  // invite over this one follow-up call would be worse than an admin invited today simply not
+  // yet being able to satisfy a future Storage RLS policy until this is retried.
+  await admin.auth.admin
+    .updateUserById(data.user.id, { app_metadata: { tenant_id: tenantId } })
+    .catch(() => {});
 
   return { success: true, data: { authUserId: data.user.id } };
 }

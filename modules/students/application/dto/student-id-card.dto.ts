@@ -18,6 +18,12 @@ export interface StudentIdCardSchoolInfo {
   address: string;
   phone: string;
   email: string;
+  // Product Completion Phase 17 Bundle A — School Branding. Optional/nullable so every existing
+  // caller that hasn't been updated to source from getSchoolBranding() still type-checks; the
+  // card components themselves fall back to their original fixed styling when these are absent.
+  themeColor?: string | null;
+  signatureUrl?: string | null;
+  sealUrl?: string | null;
 }
 
 // Sprint 4.9. Composes data already available from existing services/repositories — no new

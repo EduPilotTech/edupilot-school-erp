@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireAuthContext, getCurrentSchool } from "@/lib/auth/auth-context";
 import { getAuthorizationContext, can } from "@/lib/auth/rbac";
 import { getStudentIdCard } from "@/modules/students/application/get-student-id-card.service";
+import { getSchoolBranding } from "@/modules/branding/application/get-school-branding.service";
 import { IdCardFront } from "../[studentId]/id-card/_components/id-card-front";
 import { IdCardBack } from "../[studentId]/id-card/_components/id-card-back";
 import { BatchPrintControls } from "./_components/batch-print-controls";
@@ -52,12 +53,16 @@ export default async function StudentIdCardsBatchPage({ searchParams }: StudentI
   }
 
   const school = await getCurrentSchool();
+  const branding = await getSchoolBranding({ tenantId: authContext.tenantId, school });
   const schoolInfo = {
     name: school.schoolName,
-    logoUrl: school.logoUrl,
+    logoUrl: branding.logoUrl,
     address: `${school.address}, ${school.city}, ${school.state} ${school.postalCode}`,
     phone: school.phone,
     email: school.email,
+    themeColor: branding.themeColor,
+    signatureUrl: branding.signatureUrl,
+    sealUrl: branding.sealUrl,
   };
 
   // Missing/soft-deleted students (e.g. a stale selection) are silently skipped rather than

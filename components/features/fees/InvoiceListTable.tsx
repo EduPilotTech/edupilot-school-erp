@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { cancelInvoiceAction } from "@/app/fees/billing/actions";
 import type { FeeInvoiceDTO } from "@/modules/fees/application/dto/fee-invoice.dto";
 
@@ -63,7 +64,7 @@ export function InvoiceListTable({ invoices, studentNameById, canCancel }: Invoi
               <th className="px-4 py-2 text-left font-medium text-zinc-500">Balance</th>
               <th className="px-4 py-2 text-left font-medium text-zinc-500">Due Date</th>
               <th className="px-4 py-2 text-left font-medium text-zinc-500">Status</th>
-              {canCancel && <th className="px-4 py-2 text-right font-medium text-zinc-500">Actions</th>}
+              <th className="px-4 py-2 text-right font-medium text-zinc-500">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 bg-white">
@@ -77,20 +78,21 @@ export function InvoiceListTable({ invoices, studentNameById, canCancel }: Invoi
                 <td className="px-4 py-2 font-medium text-zinc-900">₹{invoice.balance.toFixed(2)}</td>
                 <td className="px-4 py-2 text-zinc-700">{invoice.dueDate}</td>
                 <td className={`px-4 py-2 font-medium ${STATUS_STYLES[invoice.status] ?? ""}`}>{invoice.status}</td>
-                {canCancel && (
-                  <td className="px-4 py-2 text-right">
-                    {invoice.status !== "CANCELLED" && invoice.amountPaid === 0 && (
-                      <button
-                        type="button"
-                        onClick={() => handleCancel(invoice.id)}
-                        disabled={cancellingId === invoice.id}
-                        className="text-sm text-red-600 hover:underline disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                    )}
-                  </td>
-                )}
+                <td className="px-4 py-2 text-right">
+                  <Link href={`/fees/invoices/${invoice.id}`} className="mr-3 text-sm text-blue-600 hover:underline">
+                    Print
+                  </Link>
+                  {canCancel && invoice.status !== "CANCELLED" && invoice.amountPaid === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleCancel(invoice.id)}
+                      disabled={cancellingId === invoice.id}
+                      className="text-sm text-red-600 hover:underline disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

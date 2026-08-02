@@ -1,8 +1,19 @@
 import type { AcademicSessionEntity } from "./academic-session.entity";
 
-// Read-only surface (Sprint 4 — Step 4, Step 1: "Academic Read Services"). No `create`/`update`/
-// `softDelete` here — AcademicSession is not written to by this sprint's scope, and adding
-// unused write methods would be scope creep beyond what Student Admission needs.
+export interface CreateAcademicSessionInput {
+  tenantId: string;
+  schoolId: string;
+  sessionName: string;
+  startDate: Date;
+  endDate: Date;
+  createdBy?: string | null;
+}
+
+// Extended beyond the original read-only surface (Sprint 4 — Step 4, Step 1) once the Academic
+// Setup flow confirmed a genuine, previously-unmet need: nothing in this codebase could create an
+// AcademicSession row, so the Class/Section dropdowns on Student Admission had no data to ever
+// populate for a freshly registered school. `create` is additive — `findById`/`findActive` are
+// untouched from their original shape.
 export interface AcademicSessionRepository {
   findById(tenantId: string, id: string): Promise<AcademicSessionEntity | null>;
 
@@ -10,4 +21,6 @@ export interface AcademicSessionRepository {
   // actually be admitted into. Unlike Class/Section's `findMany`, this returns the full list
   // (no pagination): admission's Academic Session dropdown needs every active session, not a page.
   findActive(tenantId: string): Promise<AcademicSessionEntity[]>;
+
+  create(input: CreateAcademicSessionInput): Promise<AcademicSessionEntity>;
 }

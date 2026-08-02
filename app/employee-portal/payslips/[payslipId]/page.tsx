@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAuthContext } from "@/lib/auth/auth-context";
+import { requireAuthContext, getCurrentSchool } from "@/lib/auth/auth-context";
 import { requirePermission } from "@/lib/auth/rbac";
 import { getMyPayslipDetail } from "@/modules/hr/application/employee-portal.service";
 import { EmployeeNotFoundError } from "@/modules/hr/domain/errors";
 import { PayslipNotFoundError } from "@/modules/payroll/domain/errors";
 import { resolveCurrentEmployeeId } from "../../_lib/resolve-current-employee";
 import { PayslipPrintableView } from "@/components/features/employee-portal/PayslipPrintableView";
+import { getSchoolBranding } from "@/modules/branding/application/get-school-branding.service";
 
 interface EmployeePortalPayslipDetailPageProps {
   params: Promise<{ payslipId: string }>;
@@ -47,6 +48,9 @@ export default async function EmployeePortalPayslipDetailPage({ params }: Employ
     throw error;
   }
 
+  const school = await getCurrentSchool();
+  const branding = await getSchoolBranding({ tenantId: authContext.tenantId, school });
+
   return (
     <main className="mx-auto max-w-4xl px-6 py-10 print:py-0">
       <div className="print:hidden">
@@ -57,7 +61,21 @@ export default async function EmployeePortalPayslipDetailPage({ params }: Employ
       <h1 className="mt-2 text-2xl font-semibold text-zinc-900">Payslip — {payslip.billingPeriod}</h1>
 
       <div className="mt-6">
-        <PayslipPrintableView payslip={payslip} />
+        <PayslipPrintableView
+          payslip={payslip}
+          branding={{
+            schoolName: branding.schoolName,
+            address: `${branding.address}, ${branding.city}, ${branding.state} ${branding.postalCode}`,
+            phone: branding.phone,
+            email: branding.email,
+            logoUrl: branding.logoUrl,
+            themeColor: branding.themeColor,
+            headerText: branding.headerText,
+            footerText: branding.footerText,
+            signatureUrl: branding.signatureUrl,
+            sealUrl: branding.sealUrl,
+          }}
+        />
       </div>
     </main>
   );

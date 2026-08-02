@@ -3,16 +3,18 @@
 import { useRef } from "react";
 import { PayslipPrintControls } from "@/components/features/payroll/PayslipPrintControls";
 import { StatusBadge } from "@/components/features/payroll/StatusBadge";
+import { LetterheadHeader, LetterheadFooter, type LetterheadBranding } from "@/components/features/branding/Letterhead";
 import type { PayslipWithComponentsDTO } from "@/modules/payroll/application/dto/payroll-run.dto";
 
 interface PayslipPrintableViewProps {
   payslip: PayslipWithComponentsDTO;
+  branding: LetterheadBranding;
 }
 
 // Self-service mirror of components/features/payroll/PayslipDetail.tsx's earnings/deductions
 // card — read-only (no payment recording, that's admin-only in app/payroll/**) — with the same
 // client-side Print + Download PDF controls (html-to-image + jsPDF, no new architecture).
-export function PayslipPrintableView({ payslip }: PayslipPrintableViewProps) {
+export function PayslipPrintableView({ payslip, branding }: PayslipPrintableViewProps) {
   const printableRef = useRef<HTMLDivElement>(null);
   const earnings = payslip.components.filter((component) => component.componentType === "EARNING");
   const deductions = payslip.components.filter((component) => component.componentType === "DEDUCTION");
@@ -24,7 +26,9 @@ export function PayslipPrintableView({ payslip }: PayslipPrintableViewProps) {
       </div>
 
       <div ref={printableRef} className="rounded-xl border border-zinc-200 bg-white p-5">
-        <div className="flex items-center justify-between">
+        <LetterheadHeader branding={branding} documentTitle="Salary Slip" />
+
+        <div className="mt-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Earnings & Deductions</h2>
             <p className="text-sm text-zinc-500">{payslip.billingPeriod}</p>
@@ -89,6 +93,8 @@ export function PayslipPrintableView({ payslip }: PayslipPrintableViewProps) {
             <dd className="text-base font-semibold text-zinc-900">₹{payslip.netPay.toFixed(2)}</dd>
           </div>
         </dl>
+
+        <LetterheadFooter branding={branding} signatureLabel="Authorized Signatory" />
       </div>
     </div>
   );

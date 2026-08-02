@@ -1,22 +1,44 @@
 import type { ReportCardDTO } from "@/modules/examinations/application/dto/report-card.dto";
 
+// Product Completion Phase 17 Bundle A — School Branding, threaded as a sibling prop rather than
+// a new field on ReportCardDTO/get-report-card.service.ts, so the examinations module's own
+// read service and DTO stay untouched (per this bundle's "Do NOT redesign any existing module"
+// instruction) — the calling page composes the two independently-fetched reads.
+export interface ReportCardBranding {
+  logoUrl: string | null;
+  themeColor: string | null;
+  signatureUrl: string | null;
+  sealUrl: string | null;
+  footerText: string | null;
+}
+
 interface ReportCardViewProps {
   reportCard: ReportCardDTO;
+  branding?: ReportCardBranding | null;
 }
 
 // Pure, presentational — no ref, no "use client" (only ReportCardPrintView, which wraps this,
 // touches html-to-image), matching TimetablePrintGrid's own split. `id="report-card-print-area"`
 // is what report-card-print.css's @media print rule targets.
-export function ReportCardView({ reportCard }: ReportCardViewProps) {
+export function ReportCardView({ reportCard, branding }: ReportCardViewProps) {
   return (
     <div id="report-card-print-area" className="rounded-xl border border-zinc-200 bg-white p-6">
-      <div className="flex items-start justify-between border-b border-zinc-200 pb-4">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-900">{reportCard.fullName}</h2>
-          <p className="text-sm text-zinc-500">
-            Admission #{reportCard.admissionNumber} · {reportCard.className} {reportCard.sectionName}
-            {reportCard.rollNumber ? ` · Roll #${reportCard.rollNumber}` : ""}
-          </p>
+      <div
+        className="flex items-start justify-between border-b-2 pb-4"
+        style={{ borderColor: branding?.themeColor || "#e4e4e7" }}
+      >
+        <div className="flex items-center gap-3">
+          {branding?.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- signed URL from Supabase Storage.
+            <img src={branding.logoUrl} alt="" className="h-10 w-10 object-contain" />
+          )}
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-900">{reportCard.fullName}</h2>
+            <p className="text-sm text-zinc-500">
+              Admission #{reportCard.admissionNumber} · {reportCard.className} {reportCard.sectionName}
+              {reportCard.rollNumber ? ` · Roll #${reportCard.rollNumber}` : ""}
+            </p>
+          </div>
         </div>
         <div className="text-right">
           <p className="text-sm font-medium text-zinc-900">{reportCard.examName}</p>
@@ -80,6 +102,22 @@ export function ReportCardView({ reportCard }: ReportCardViewProps) {
             {reportCard.attendance.late} · Half Day: {reportCard.attendance.halfDay} · Leave:{" "}
             {reportCard.attendance.leave} · Total Marked: {reportCard.attendance.totalMarked}
           </p>
+        </div>
+      )}
+
+      {(branding?.signatureUrl || branding?.sealUrl || branding?.footerText) && (
+        <div className="mt-6 flex items-end justify-between border-t border-zinc-200 pt-4">
+          <p className="text-xs text-zinc-400">{branding.footerText}</p>
+          <div className="flex items-center gap-3">
+            {branding.signatureUrl && (
+              // eslint-disable-next-line @next/next/no-img-element -- signed URL from Supabase Storage.
+              <img src={branding.signatureUrl} alt="Principal signature" className="h-10 w-20 object-contain" />
+            )}
+            {branding.sealUrl && (
+              // eslint-disable-next-line @next/next/no-img-element -- signed URL from Supabase Storage.
+              <img src={branding.sealUrl} alt="School seal" className="h-12 w-12 object-contain" />
+            )}
+          </div>
         </div>
       )}
     </div>

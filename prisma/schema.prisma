@@ -101,6 +101,7 @@ model Tenant {
   updatedBy String?   @map("updated_by") @db.Uuid
 
   school                      School?
+  schoolBranding              SchoolBranding?
   academicSessions            AcademicSession[]
   roles                       Role[]
   userProfiles                UserProfile[]
@@ -283,6 +284,47 @@ model School {
   @@unique([tenantId, id])
   @@index([schoolName])
   @@map("schools")
+}
+
+// Product Completion Phase 17 Bundle A — one branding row per tenant (1:1, same "tenantId
+// @unique" singleton shape as School above). Deliberately a separate table from School, not new
+// columns on it: School holds the school's official registration identity (name, board,
+// registration number, contact) written once at signup; SchoolBranding holds presentation-layer
+// assets/preferences an admin edits repeatedly after signup (logo, letterhead text, theme color,
+// social links). Keeping them separate means print documents can read core identity from School
+// and branding overlays from here without either table's concerns bleeding into the other.
+//
+// Image assets are stored as Supabase Storage keys (logoKey/signatureKey/sealKey), not raw URLs —
+// mirrors StudentDocument's own storageKey convention (see modules/students/domain/student-
+// document.entity.ts): a signed URL is resolved from the key at read time by
+// get-school-branding.service.ts, never persisted, since the bucket is private per docs/
+// SECURITY_GUIDELINES.md's tenant-isolated-storage convention.
+model SchoolBranding {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @unique @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  logoKey      String? @map("logo_key")
+  signatureKey String? @map("signature_key")
+  sealKey      String? @map("seal_key")
+
+  headerText String? @map("header_text")
+  footerText String? @map("footer_text")
+  themeColor String? @map("theme_color")
+  motto      String?
+
+  facebookUrl  String? @map("facebook_url")
+  twitterUrl   String? @map("twitter_url")
+  instagramUrl String? @map("instagram_url")
+  linkedinUrl  String? @map("linkedin_url")
+  youtubeUrl   String? @map("youtube_url")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  @@map("school_branding")
 }
 
 // An AcademicSession is one school year (e.g. "2025-2026") scoped to a Tenant and its School.

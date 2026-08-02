@@ -3,6 +3,10 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Completion Pass — Theme engine (checklist #6). Default brand color used everywhere a
+     tenant hasn't configured SchoolBranding.themeColor yet (see app/layout.tsx, which overrides
+     this with an inline style on <html> once a tenant's own color is known). */
+  --brand-color: #2563eb;
 }
 
 @theme inline {

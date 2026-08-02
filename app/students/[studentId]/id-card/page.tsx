@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireAuthContext, getCurrentSchool } from "@/lib/auth/auth-context";
 import { getAuthorizationContext, can } from "@/lib/auth/rbac";
 import { getStudentIdCard } from "@/modules/students/application/get-student-id-card.service";
+import { getSchoolBranding } from "@/modules/branding/application/get-school-branding.service";
 import { StudentNotFoundError } from "@/modules/students/domain/errors";
 import { ValidationError } from "@/lib/errors";
 import { StudentIdCardPreview } from "./_components/student-id-card-preview";
@@ -27,6 +28,7 @@ export default async function StudentIdCardPage({ params }: StudentIdCardPagePro
   }
 
   const school = await getCurrentSchool();
+  const branding = await getSchoolBranding({ tenantId: authContext.tenantId, school });
 
   let card;
   try {
@@ -36,10 +38,13 @@ export default async function StudentIdCardPage({ params }: StudentIdCardPagePro
         tenantId: authContext.tenantId,
         school: {
           name: school.schoolName,
-          logoUrl: school.logoUrl,
+          logoUrl: branding.logoUrl,
           address: `${school.address}, ${school.city}, ${school.state} ${school.postalCode}`,
           phone: school.phone,
           email: school.email,
+          themeColor: branding.themeColor,
+          signatureUrl: branding.signatureUrl,
+          sealUrl: branding.sealUrl,
         },
       }
     );

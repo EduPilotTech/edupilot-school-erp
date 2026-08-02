@@ -1,12 +1,13 @@
 import Link from "next/link";
 import "./report-card-print.css";
-import { requireAuthContext } from "@/lib/auth/auth-context";
+import { requireAuthContext, getCurrentSchool } from "@/lib/auth/auth-context";
 import { requirePermission, getAuthorizationContext, can } from "@/lib/auth/rbac";
 import { listActiveAcademicSessions } from "@/modules/academics/application/list-active-academic-sessions.service";
 import { listExams } from "@/modules/examinations/application/list-exams.service";
 import { listStudents } from "@/modules/students/application/list-students.service";
 import { getReportCard } from "@/modules/examinations/application/get-report-card.service";
 import { getStudentProgressReport } from "@/modules/examinations/application/get-student-progress-report.service";
+import { getSchoolBranding } from "@/modules/branding/application/get-school-branding.service";
 import { ReportCardPrintView } from "@/components/features/examinations/ReportCardPrintView";
 import { ProgressReportTable } from "@/components/features/examinations/ProgressReportTable";
 
@@ -181,7 +182,21 @@ async function ReportCardResult({
       </p>
     );
   }
-  return <ReportCardPrintView reportCard={reportCard} canPrint={canPrint} />;
+  const school = await getCurrentSchool();
+  const branding = await getSchoolBranding({ tenantId, school });
+  return (
+    <ReportCardPrintView
+      reportCard={reportCard}
+      canPrint={canPrint}
+      branding={{
+        logoUrl: branding.logoUrl,
+        themeColor: branding.themeColor,
+        signatureUrl: branding.signatureUrl,
+        sealUrl: branding.sealUrl,
+        footerText: branding.footerText,
+      }}
+    />
+  );
 }
 
 async function StudentSearchResults({

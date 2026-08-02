@@ -16,7 +16,10 @@ function initials(fullName: string): string {
 export function IdCardFront({ card }: IdCardFrontProps) {
   return (
     <div className="flex h-[53.98mm] w-[85.6mm] flex-col overflow-hidden rounded-[2mm] border border-zinc-300 bg-white text-black">
-      <div className="flex items-center gap-[1.5mm] bg-blue-700 px-[3mm] py-[1.5mm] text-white">
+      <div
+        className="flex items-center gap-[1.5mm] px-[3mm] py-[1.5mm] text-white"
+        style={{ backgroundColor: card.school.themeColor || "#1D4ED8" }}
+      >
         {card.school.logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- fixed-size print layout, not an optimizable responsive image.
           <img src={card.school.logoUrl} alt="" className="h-[6mm] w-[6mm] rounded-full bg-white object-contain" />

@@ -5,7 +5,10 @@ import type {
   AcademicSessionEntity,
   AcademicSessionStatusValue,
 } from "../domain/academic-session.entity";
-import type { AcademicSessionRepository } from "../domain/academic-session.repository";
+import type {
+  AcademicSessionRepository,
+  CreateAcademicSessionInput,
+} from "../domain/academic-session.repository";
 
 function toEntity(row: PrismaAcademicSession): AcademicSessionEntity {
   return {
@@ -43,5 +46,21 @@ export class PrismaAcademicSessionRepository implements AcademicSessionRepositor
       })
     );
     return rows.map(toEntity);
+  }
+
+  async create(input: CreateAcademicSessionInput): Promise<AcademicSessionEntity> {
+    const row = await withTenantContext(input.tenantId, (tx) =>
+      tx.academicSession.create({
+        data: {
+          tenantId: input.tenantId,
+          schoolId: input.schoolId,
+          sessionName: input.sessionName,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          createdBy: input.createdBy ?? null,
+        },
+      })
+    );
+    return toEntity(row);
   }
 }

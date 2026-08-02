@@ -19,6 +19,11 @@ import { updateSupabaseSession } from "@/lib/supabase/middleware";
 
 const AUTH_ROUTES = ["/login", "/register", "/forgot-password"];
 
+// Every real top-level module route directory under app/ (Glob'd directly), excluding the
+// (auth) route group (login/register/forgot-password — deliberately anonymous-reachable),
+// `api` (route handlers, not page navigations — not applicable here), and `/platform` (kept as
+// its own separate PLATFORM_ROUTE_PREFIX below, exactly as before). This replaces the stale
+// Phase-0-era list that only covered 7 of the 24 real module route trees that now exist.
 const PROTECTED_ROUTE_PREFIXES = [
   "/dashboard",
   "/settings",
@@ -27,6 +32,23 @@ const PROTECTED_ROUTE_PREFIXES = [
   "/academics",
   "/attendance",
   "/fees",
+  "/classes",
+  "/communication",
+  "/employee-portal",
+  "/examinations",
+  "/finance",
+  "/hostel",
+  "/hr",
+  "/library",
+  "/notification",
+  "/notifications",
+  "/parent",
+  "/parents",
+  "/payroll",
+  "/templates",
+  "/timetable",
+  "/transport",
+  "/billing",
 ];
 
 // Treated as protected at this layer, same as everything above — proxy.ts only confirms a

@@ -1,6 +1,7 @@
 import { requireAuthContext, getCurrentSchool } from "@/lib/auth/auth-context";
 import { requirePermission } from "@/lib/auth/rbac";
 import { getFeePayment } from "@/modules/fees/application/get-payment.service";
+import { getSchoolBranding } from "@/modules/branding/application/get-school-branding.service";
 import { getFeeInvoice } from "@/modules/fees/application/get-invoice.service";
 import { listFeeCategories } from "@/modules/fees/application/list-fee-categories.service";
 import { PrismaStudentRepository } from "@/modules/students/infrastructure/prisma-student.repository";
@@ -19,6 +20,7 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
   const { paymentId } = await params;
   const payment = await getFeePayment(authContext.tenantId, paymentId);
   const school = await getCurrentSchool();
+  const branding = await getSchoolBranding({ tenantId: authContext.tenantId, school });
 
   const studentRepository = new PrismaStudentRepository();
   const student = await studentRepository.findById(authContext.tenantId, payment.studentId);
@@ -46,6 +48,8 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
       <ReceiptPrintView
         schoolName={school.schoolName}
         schoolAddress={`${school.address}, ${school.city}, ${school.state} ${school.postalCode}`}
+        logoUrl={branding.logoUrl}
+        footerText={branding.footerText}
         payment={payment}
         studentName={student ? `${student.firstName} ${student.lastName}` : "Unknown"}
         admissionNumber={student?.admissionNumber ?? ""}

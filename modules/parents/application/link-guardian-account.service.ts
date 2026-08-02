@@ -53,7 +53,7 @@ export async function linkGuardianAccount(
     throw new ValidationError("The Parent system role is not configured.");
   }
 
-  const inviteResult = await inviteUserByEmail(email, { tenant_id: tenantId, full_name: guardian.fullName });
+  const inviteResult = await inviteUserByEmail(email, { tenant_id: tenantId, full_name: guardian.fullName }, tenantId);
   if (!inviteResult.success) {
     throw new ValidationError("Could not send the invitation. Please try again.");
   }

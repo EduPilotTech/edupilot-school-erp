@@ -71,6 +71,22 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
               ID Card
             </Link>
           )}
+          {can(authorization, "student.certificate.print") && (
+            <>
+              <Link
+                href={`/students/${profile.student.id}/certificate`}
+                className="rounded-lg border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 hover:border-zinc-400"
+              >
+                Bonafide Certificate
+              </Link>
+              <Link
+                href={`/students/${profile.student.id}/transfer-certificate`}
+                className="rounded-lg border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 hover:border-zinc-400"
+              >
+                Transfer Certificate
+              </Link>
+            </>
+          )}
           {can(authorization, "student.update") && (
             <Link
               href={`/students/${profile.student.id}/edit`}
