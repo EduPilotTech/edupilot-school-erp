@@ -22,7 +22,10 @@ export type NotificationTypeValue =
   | "EXAM_SCHEDULE"
   | "HOLIDAY_NOTICE"
   | "BIRTHDAY_WISHES"
-  | "HOSTEL_NOTICE";
+  | "HOSTEL_NOTICE"
+  // Phase 16 Bundle D — the platform notifying a School about its own subscription (Renewal/
+  // Grace/Expiry reminders). See prisma/schema.prisma's NotificationType enum comment.
+  | "SUBSCRIPTION_ALERT";
 
 export type NotificationPriorityValue = "LOW" | "NORMAL" | "HIGH" | "URGENT";
 

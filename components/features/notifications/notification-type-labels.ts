@@ -24,6 +24,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationTypeValue, string> = {
   NOTICE: "General Notice",
   MESSAGE: "Message",
   CALENDAR_EVENT: "Calendar Event",
+  SUBSCRIPTION_ALERT: "Subscription Alert",
 };
 
 export const NOTIFICATION_TYPE_OPTIONS: { value: NotificationTypeValue; label: string }[] = (

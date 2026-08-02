@@ -950,6 +950,34 @@ const PERMISSIONS = [
     action: "manage",
     roles: ADMIN_ROLE_CODES,
   },
+  // Phase 16, Bundle E — Payment & Subscription Management UI. `platform.billing.manage` is
+  // EduPilot's own cross-tenant platform-staff action (Platform Admin's three dashboards, School
+  // Management suspend/activate, and Plan Catalog CRUD) — granted to SUPER_ADMIN ONLY, never
+  // SCHOOL_ADMIN: unlike every other ADMIN_ROLE_CODES-gated code in this file, granting this to
+  // SCHOOL_ADMIN would let one tenant's admin see or act on every other tenant's data, which is a
+  // real security boundary, not a formality. `billing.subscription.manage` and
+  // `billing.invoice.view` are the tenant-scoped counterparts — a school's own view/renew/upgrade
+  // of its own subscription and its own invoice/payment/refund history — so those follow the
+  // ordinary ADMIN_ROLE_CODES precedent (every mutation still takes tenantId from the caller's
+  // own session, never from client input, exactly like every other tenant-scoped action).
+  {
+    code: "platform.billing.manage",
+    resource: "platform.billing",
+    action: "manage",
+    roles: ["SUPER_ADMIN"] as const,
+  },
+  {
+    code: "billing.subscription.manage",
+    resource: "billing.subscription",
+    action: "manage",
+    roles: ADMIN_ROLE_CODES,
+  },
+  {
+    code: "billing.invoice.view",
+    resource: "billing.invoice",
+    action: "view",
+    roles: ADMIN_ROLE_CODES,
+  },
 ] as const;
 
 async function main() {

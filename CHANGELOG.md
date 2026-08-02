@@ -2,6 +2,82 @@
 
 All notable changes to EduPilot School ERP are documented in this file.
 
+## [v0.16.0] — Payment & Subscription Management
+
+The first release with platform-scoped data — every table built through v0.15.0 belongs to
+exactly one tenant; this release introduces three tiers (tenant-owned, public catalog,
+platform-operations) to model EduPilot's own billing relationship with each school. Delivered as
+five sequential bundles (schema → core services → Razorpay integration → invoicing/reporting →
+lifecycle automation → UI), each frozen and approved before the next began.
+
+### Added
+- **Database**: 9 new models — `SubscriptionPlanDefinition`, `PlanFeatureEntitlement` (public
+  catalog, no `tenantId`); `Subscription`, `SubscriptionInvoice`, `Payment` (tenant-owned);
+  `BillingRun`, `WebhookEvent`, `PlatformInvoiceSequence`, `PlatformAuditLog` (platform-ops, no
+  `tenantId`, `PlatformAuditLog.tenantId` nullable). Reuses `Tenant.subscriptionPlan`/
+  `subscriptionStatus` (Phase 0 fields, unused until now) as the tenant's live-state cache behind
+  `Subscription`'s append-only revision history — the same relationship
+  `Employee.employmentStatus` has to `EmployeeSalaryAssignment`. One additive `NotificationType`
+  value, `SUBSCRIPTION_ALERT`, added later in the same release for renewal/grace/expiry reminders,
+  mirroring the `PAYROLL_ALERT`/`LIBRARY_ALERT` precedent.
+- **Subscription Lifecycle**: Trial → Active → Grace Period (`PAST_DUE`) → Expired → Cancelled,
+  plus Renewed (a close-then-create revision, not an in-place edit) — a formal transition table
+  gates every status change. `Tenant.status`/`TenantStatus.SUSPENDED` (also unused since Phase 0)
+  now backs School Suspension, a deliberately separate axis from subscription status (a tenant can
+  be suspended for reasons unrelated to billing).
+- **Razorpay Integration**: order creation, payment capture, refunds, and checkout-signature
+  verification behind a `PaymentGatewayProvider` interface (mirrors the existing `StorageService`
+  abstraction) — no application code depends on the `razorpay` SDK directly. Webhook ingestion
+  verifies `X-Razorpay-Signature` via constant-time HMAC-SHA256 comparison and applies a
+  replay-protection timestamp heuristic before any database write; idempotent on
+  `(gatewayProvider, gatewayEventId)`. PhonePe is a reserved, unimplemented enum value for a
+  future gateway.
+- **Invoicing**: server-side PDF generation (jsPDF, the same stack already used for Employee
+  Letters/ID cards/receipts) for both plain and GST-compliant tax invoices (CGST/SGST/IGST
+  breakdown, HSN/SAC `998319`), persisted to a new `platform-invoices` Storage bucket. On-demand
+  (unpersisted) payment receipts, since a receipt is fully deterministic from existing data and
+  this schema has no per-payment storage slot for one.
+- **Billing Automation**: `BillingRun` batch invoice generation (per-tenant isolated units of
+  work, not one all-tenant transaction — one school's failure never blocks another's already-
+  generated invoice); auto-renewal (extends the billing period and generates the next invoice —
+  does **not** achieve unattended charging, since this schema has no stored payment
+  mandate/token); three daily background-job entry points (Validation/Expiry/Renewal Processing),
+  callable but not yet wired to a scheduler (Phase 21).
+- **License & Feature Entitlement**: `validateTenantAccess` composes subscription validity with
+  School Suspension as an absolute override; `resolveFeatureLock` composes that with per-plan
+  feature entitlements (`PlanFeatureEntitlement`, a flat key/value shape so a newly-gated feature
+  never needs a schema change).
+- **Notifications**: Renewal, Grace-Period, and Expiry reminders dispatched to every `SCHOOL_ADMIN`
+  of the affected tenant through the existing `dispatchNotification`/`NotificationQueue`
+  machinery — no parallel notification system was built.
+- **UI**: Platform Admin (Subscription/Billing/Payment dashboards, School Management,
+  Plan Catalog, Billing Runs — `SUPER_ADMIN`-only, `/platform/**`); School Billing (invoice
+  list/detail/PDF/cancel, payment history, refund history, receipt download —
+  `/billing/**`); Subscription (current plan, renew via Razorpay Checkout.js, upgrade, expiry
+  status, feature usage); read-only Payment/Billing Settings.
+- **RBAC**: `platform.billing.manage` (`SUPER_ADMIN` only — a school admin must never reach any
+  `/platform/**` page or another tenant's data), `billing.subscription.manage` and
+  `billing.invoice.view` (`SUPER_ADMIN` + `SCHOOL_ADMIN`, tenant-scoped).
+- **Reports**: Collection Report, Outstanding Report (by tenant), Monthly Revenue Report — all
+  platform-wide, composed via the same direct-`prisma`-client cross-tenant pattern `BillingRun`
+  itself established, not a new access pattern.
+- **Tests**: 928/928 passing project-wide, including DTO validation, pure business-rule helpers
+  (GST calculation, payment/lifecycle state-transition tables, webhook signature/replay/idempotency,
+  MRR month-normalization for mixed monthly/annual plans), and mocked service-logic tests
+  throughout `modules/billing`.
+- **Build**: `prisma validate`, migration status, lint, typecheck, full test suite, and production
+  build (239 routes, up from 172) all pass clean.
+
+### Known limitations (documented, not silently deferred)
+- Auto-renewal extends the billing period and invoice but cannot charge a card unattended — no
+  recurring-payment mandate/token is stored anywhere in this schema.
+- GST tax rate and inter-state/intra-state determination are supplied by the caller at invoice-PDF
+  generation time — this release computes the breakdown correctly but does not store a GSTIN or
+  registered-state per tenant to auto-determine it.
+- `modules/tenancy/infrastructure` (the sanctioned RLS-bypass home for genuinely cross-tenant
+  reads) was never built — every platform-wide read in this release uses the plain `prisma`
+  client directly instead, an established but interim pattern.
+
 ## [v0.15.0] — Communication Hub
 
 Extends the existing Phase 9 notification foundation (`Notification`/`NotificationDelivery`/

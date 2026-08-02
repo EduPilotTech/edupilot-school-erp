@@ -2335,6 +2335,14 @@ enum NotificationType {
   HOLIDAY_NOTICE
   BIRTHDAY_WISHES
   HOSTEL_NOTICE
+  // Phase 16 Bundle D — the platform (EduPilot) notifying a School about its OWN platform
+  // subscription (Renewal/Grace/Expiry reminders). Every existing type above is a school-internal,
+  // student/staff/parent-facing concern; none fit the platform's own billing relationship with the
+  // school itself. Mirrors PAYROLL_ALERT's own precedent: none of the existing types fit cleanly,
+  // so a new one is added rather than overloading an unrelated type (e.g. FEE_DUE, which is
+  // specifically about student fee dues, a different money-owed relationship in the opposite
+  // direction).
+  SUBSCRIPTION_ALERT
 }
 
 enum NotificationPriority {
