@@ -210,6 +210,10 @@ model Tenant {
   expenseEntries              Expense[]
   notificationTemplates       NotificationTemplate[]
   notificationQueues          NotificationQueue[]
+  subscriptions               Subscription[]
+  subscriptionInvoices        SubscriptionInvoice[]
+  payments                    Payment[]
+  platformAuditLogs           PlatformAuditLog[]
 
   @@index([status])
   @@index([subscriptionStatus])
@@ -5157,4 +5161,373 @@ model NotificationQueue {
   @@unique([tenantId, notificationId])
   @@index([tenantId, status, scheduledAt])
   @@map("notification_queue")
+}
+
+// --- Phase 16 — Payment & Subscription Management (modules/billing, modules/tenancy) -----------
+//
+// Three-tier data model — a first for this codebase (see the approved Phase 16 Database Review
+// for full rationale). Every table built through Phase 15 has exactly one shape: tenantId
+// required, RLS-isolated, one row belongs to one school. This phase needs three:
+//   1. Tenant-owned billing data (Subscription, SubscriptionInvoice, Payment) — tenantId
+//      required, identical discipline to every existing table.
+//   2. Public catalog data (SubscriptionPlanDefinition, PlanFeatureEntitlement) — no tenantId at
+//      all; every tenant reads the same plan catalog, only platform staff write it.
+//   3. Platform-operations data (BillingRun, WebhookEvent, PlatformInvoiceSequence) — no tenantId
+//      at all, by nature (a billing run or an inbound webhook event is not about one tenant).
+//      PlatformAuditLog is the one hybrid: tenantId is NULLABLE, since most rows are about one
+//      tenant's billing action but a BillingRun-lock or catalog edit isn't about any tenant.
+//
+// Reuses Tenant.subscriptionPlan / Tenant.subscriptionStatus (Phase 0 fields, unused until now)
+// as the tenant's live "current state" cache — Subscription is the detailed, append-only
+// billing-cycle history behind that cache, exactly the same relationship Employee.employmentStatus
+// has to EmployeeSalaryAssignment. SubscriptionPlan and SubscriptionStatus (both pre-existing
+// enums, declared above) are reused directly for Subscription's own fields below, not
+// re-declared.
+//
+// New enums below are deliberately domain-scoped rather than reusing FeeInvoiceStatus/
+// FeePaymentStatus/FeePaymentMode, even though some are structurally close — mirrors the Phase 13
+// precedent of SalaryPaymentMode-not-FeePaymentMode ("Payroll gets its own pipeline"), applied
+// here because platform billing and school-fee billing are even less related than Payroll and
+// Fees were.
+
+enum BillingCycle {
+  MONTHLY
+  ANNUAL
+}
+
+enum BillingRunStatus {
+  DRAFT
+  PROCESSED
+  LOCKED
+  CANCELLED
+}
+
+enum SubscriptionInvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  VOID
+}
+
+enum PaymentGatewayProviderCode {
+  RAZORPAY
+  // Reserved, unused until a PhonePeGatewayProvider implementation exists (application/
+  // infrastructure layer, not this schema) — adding it later is then a pure addition.
+  PHONEPE
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  VERIFIED
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum PlanFeatureValueType {
+  BOOLEAN
+  LIMIT
+}
+
+// --- Public catalog — no tenantId. Every tenant reads the same rows to shop/upgrade; only
+// platform staff write them (RLS: read-open, write-restricted — see Database Review §8). ---------
+
+model SubscriptionPlanDefinition {
+  id       String           @id @default(uuid()) @db.Uuid
+  planCode SubscriptionPlan @unique @map("plan_code")
+
+  name         String
+  description  String?
+  monthlyPrice Decimal @map("monthly_price") @db.Decimal(10, 2)
+  annualPrice  Decimal @map("annual_price") @db.Decimal(10, 2)
+  currency     String  @default("INR")
+  trialDays    Int     @default(0) @map("trial_days")
+  isActive     Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+
+  entitlements  PlanFeatureEntitlement[]
+  subscriptions Subscription[]
+
+  @@map("subscription_plan_definitions")
+}
+
+// Flat key/value entitlement per plan — a newly-gated feature later is a new row, never a schema
+// change. No soft delete: a pure definition row with no historical significance of its own
+// (Subscription.plan already snapshots what a tenant had at assignment time).
+model PlanFeatureEntitlement {
+  id                           String                     @id @default(uuid()) @db.Uuid
+  subscriptionPlanDefinitionId String                     @map("subscription_plan_definition_id") @db.Uuid
+  subscriptionPlanDefinition   SubscriptionPlanDefinition @relation(fields: [subscriptionPlanDefinitionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  featureKey   String               @map("feature_key")
+  valueType    PlanFeatureValueType @map("value_type")
+  booleanValue Boolean?             @map("boolean_value")
+  limitValue   Int?                 @map("limit_value")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([subscriptionPlanDefinitionId, featureKey])
+  @@map("plan_feature_entitlements")
+}
+
+// --- Tenant-owned billing data — tenantId required, standard RLS isolation, identical discipline
+// to every existing table. ------------------------------------------------------------------------
+
+// Append-only, close-then-create revision history — mirrors EmployeeSalaryAssignment exactly.
+// effectiveTo null = the current row for this tenant. Tenant.subscriptionPlan/subscriptionStatus
+// are kept as a denormalized "current state" cache, updated transactionally in the same write
+// that closes/opens a row here (application-layer concern, not enforced by the schema itself).
+model Subscription {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  subscriptionPlanDefinitionId String                     @map("subscription_plan_definition_id") @db.Uuid
+  subscriptionPlanDefinition   SubscriptionPlanDefinition @relation(fields: [subscriptionPlanDefinitionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Snapshot at assignment time — mirrors EmployeeSalaryAssignment.basicSalary's own "snapshot,
+  // don't rewrite history when the catalog changes later" discipline.
+  plan              SubscriptionPlan   @default(FREE)
+  status            SubscriptionStatus @default(TRIALING)
+  billingCycle      BillingCycle       @map("billing_cycle")
+  priceAtAssignment Decimal            @map("price_at_assignment") @db.Decimal(10, 2)
+  currency          String
+
+  autoRenew          Boolean   @default(true) @map("auto_renew")
+  trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamptz(3)
+  currentPeriodStart DateTime  @map("current_period_start") @db.Date
+  currentPeriodEnd   DateTime  @map("current_period_end") @db.Date
+
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+
+  gatewaySubscriptionId String? @map("gateway_subscription_id")
+
+  cancelledAt        DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelledBy        String?   @map("cancelled_by") @db.Uuid
+  cancellationReason String?   @map("cancellation_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  invoices SubscriptionInvoice[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, effectiveTo])
+  @@map("subscriptions")
+}
+
+// One per tenant per billing period — mirrors FeeInvoice/Payslip's own "per-period generated
+// record" shape. Never hard/soft deleted — corrections go through `status` (VOID), mirroring
+// FeeInvoice's own no-delete discipline.
+model SubscriptionInvoice {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  subscriptionId String       @map("subscription_id") @db.Uuid
+  subscription   Subscription @relation(fields: [tenantId, subscriptionId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Nullable — the normal path is invoice-generated-by-a-run, but a manual/corrective invoice
+  // shouldn't be forced to belong to a batch run it wasn't actually part of.
+  billingRunId String?     @map("billing_run_id") @db.Uuid
+  billingRun   BillingRun? @relation(fields: [billingRunId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  invoiceNumber String   @map("invoice_number")
+  billingPeriod String   @map("billing_period")
+  periodStart   DateTime @map("period_start") @db.Date
+  periodEnd     DateTime @map("period_end") @db.Date
+
+  planAtInvoice SubscriptionPlan @map("plan_at_invoice")
+  amount        Decimal          @db.Decimal(10, 2)
+  taxAmount     Decimal          @default(0) @map("tax_amount") @db.Decimal(10, 2)
+  totalAmount   Decimal          @map("total_amount") @db.Decimal(10, 2)
+  currency      String
+
+  status SubscriptionInvoiceStatus @default(DRAFT)
+
+  issuedAt DateTime? @map("issued_at") @db.Timestamptz(3)
+  dueDate  DateTime  @map("due_date") @db.Date
+  paidAt   DateTime? @map("paid_at") @db.Timestamptz(3)
+
+  storageKey String? @map("storage_key")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  payments Payment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId, status])
+  @@index([status, dueDate])
+  @@index([billingRunId])
+  @@map("subscription_invoices")
+}
+
+// One gateway transaction attempt against a SubscriptionInvoice — mirrors FeePayment/
+// SalaryPayment's "immutable once settled, corrections via refund/status-flip only" discipline.
+// Never stores card/instrument data — only gateway-issued identifiers and status metadata (see
+// Database Review §17 / the approved Security Review).
+model Payment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  subscriptionInvoiceId String              @map("subscription_invoice_id") @db.Uuid
+  subscriptionInvoice   SubscriptionInvoice @relation(fields: [tenantId, subscriptionInvoiceId], references: [tenantId, id], onDelete: Restrict, onUpdate: Cascade)
+
+  gatewayProvider  PaymentGatewayProviderCode @map("gateway_provider")
+  gatewayOrderId   String                     @map("gateway_order_id")
+  // Null until captured.
+  gatewayPaymentId String?                    @map("gateway_payment_id")
+
+  amount   Decimal       @db.Decimal(10, 2)
+  currency String
+  status   PaymentStatus @default(CREATED)
+  // Gateway-reported (card/upi/netbanking) — free text, not an enum: the exact vocabulary is
+  // gateway-specific and shouldn't be hardcoded into a type we own.
+  method   String?
+
+  // Raw order/payment metadata at last status change, for support/dispute reference — never card
+  // data, only gateway-issued identifiers and status fields.
+  gatewayResponseSnapshot Json?   @map("gateway_response_snapshot")
+  failureReason           String? @map("failure_reason")
+
+  refundedAmount Decimal   @default(0) @map("refunded_amount") @db.Decimal(10, 2)
+  capturedAt     DateTime? @map("captured_at") @db.Timestamptz(3)
+  refundedAt     DateTime? @map("refunded_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  webhookEvents WebhookEvent[]
+
+  @@unique([tenantId, id])
+  @@unique([gatewayProvider, gatewayOrderId])
+  @@unique([gatewayProvider, gatewayPaymentId])
+  @@index([tenantId, status])
+  @@index([subscriptionInvoiceId])
+  @@map("payments")
+}
+
+// --- Platform-operations data — no tenantId (BillingRun/WebhookEvent/PlatformInvoiceSequence) or
+// a nullable one (PlatformAuditLog). Never readable through a tenant-scoped RLS path — see
+// Database Review §8; access is exclusively through the service-role path modules/tenancy/
+// infrastructure is responsible for. ----------------------------------------------------------------
+
+// Platform-wide batch invoice-generation container, one per calendar billing period across every
+// tenant — mirrors PayrollRun's DRAFT->PROCESSED->LOCKED shape, deliberately NOT tenant-scoped
+// since it spans every tenant in one operational batch.
+model BillingRun {
+  id            String           @id @default(uuid()) @db.Uuid
+  billingPeriod String           @unique @map("billing_period")
+  status        BillingRunStatus @default(DRAFT)
+
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(3)
+  processedBy String?   @map("processed_by") @db.Uuid
+  lockedAt    DateTime? @map("locked_at") @db.Timestamptz(3)
+  lockedBy    String?   @map("locked_by") @db.Uuid
+
+  totalInvoicesGenerated Int     @default(0) @map("total_invoices_generated")
+  totalAmountBilled      Decimal @default(0) @map("total_amount_billed") @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  invoices SubscriptionInvoice[]
+
+  @@map("billing_runs")
+}
+
+// Raw inbound gateway event log — a distinct trail from PlatformAuditLog: this records what the
+// gateway told us (including events ultimately rejected/ignored), not what our own system did.
+// Idempotency via [gatewayProvider, gatewayEventId] — webhooks can be redelivered.
+model WebhookEvent {
+  id              String                     @id @default(uuid()) @db.Uuid
+  gatewayProvider PaymentGatewayProviderCode @map("gateway_provider")
+  eventType       String                     @map("event_type")
+  gatewayEventId  String                     @map("gateway_event_id")
+
+  payloadSnapshot   Json               @map("payload_snapshot")
+  signatureVerified Boolean            @map("signature_verified")
+  status            WebhookEventStatus @default(RECEIVED)
+
+  // Nullable — set once the event has been resolved to a specific Payment during processing.
+  relatedPaymentId String?  @map("related_payment_id") @db.Uuid
+  relatedPayment   Payment? @relation(fields: [relatedPaymentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  processingError String? @map("processing_error")
+
+  receivedAt  DateTime  @default(now()) @map("received_at") @db.Timestamptz(3)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(3)
+
+  @@unique([gatewayProvider, gatewayEventId])
+  @@index([status, receivedAt])
+  @@map("webhook_events")
+}
+
+// Mirrors FeeAuditLog/PayrollAuditLog field-for-field. tenantId is the one nullable exception in
+// this codebase's audit-log family — most rows are about one tenant's billing action, but a
+// BillingRun-lock or plan-catalog edit isn't about any single tenant.
+model PlatformAuditLog {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String? @map("tenant_id") @db.Uuid
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  actorId    String? @map("actor_id") @db.Uuid
+  action     String
+  entityType String  @map("entity_type")
+  entityId   String  @map("entity_id") @db.Uuid
+
+  beforeState Json? @map("before_state")
+  afterState  Json? @map("after_state")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([tenantId, entityType, entityId])
+  @@index([createdAt])
+  @@map("platform_audit_logs")
+}
+
+// Global vendor invoice-numbering counter, scoped by financial year — NOT by tenant, mirroring
+// FeeNumberSequence's per-scope counter shape but for EduPilot's own outbound numbering (a single
+// sequential series across every tenant, the normal expectation for statutory/GST invoice
+// numbering).
+model PlatformInvoiceSequence {
+  id            String @id @default(uuid()) @db.Uuid
+  financialYear String @unique @map("financial_year")
+
+  prefix     String @default("")
+  lastNumber Int    @default(0) @map("last_number")
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@map("platform_invoice_sequences")
 }

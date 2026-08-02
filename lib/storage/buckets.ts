@@ -9,3 +9,8 @@ export const STUDENT_DOCUMENTS_BUCKET = "student-documents";
 // this bucket (and its Storage RLS policies) must be created in the Supabase project before any
 // upload against it will succeed at runtime.
 export const EMPLOYEE_DOCUMENTS_BUCKET = "employee-documents";
+
+// Phase 16 Bundle C — same "must be provisioned externally" caveat as STUDENT_DOCUMENTS_BUCKET
+// above: this bucket (and its Storage RLS policies) must be created in the Supabase project
+// before any upload against it will succeed at runtime.
+export const PLATFORM_INVOICES_BUCKET = "platform-invoices";

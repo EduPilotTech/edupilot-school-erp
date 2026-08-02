@@ -65,6 +65,83 @@ environment variables through different mechanisms and do not share one file by 
 - This variable is documented now, ahead of its first use, so the required Supabase project
   configuration is known upfront — it is not yet read by any file in this repository.
 
+### Razorpay
+
+Introduced in Phase 16 (Payment & Subscription Management) for `modules/billing`'s payment
+gateway integration — see
+[modules/billing/infrastructure/payment-gateway/](../modules/billing/infrastructure/payment-gateway/).
+
+#### `RAZORPAY_KEY_ID` — not secret, but not for public distribution
+
+- **Purpose:** identifies the Razorpay account/API key pair. Used server-side (order creation)
+  and client-side (passed to Razorpay's `checkout.js` widget to open the payment sheet).
+- **Value:** Razorpay Dashboard → Settings → API Keys → Key Id.
+- Not a secret in the sense of `RAZORPAY_KEY_SECRET` — Razorpay's own Checkout widget requires it
+  in the browser by design, similar in spirit to `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Unlike that key,
+  though, it is not currently prefixed `NEXT_PUBLIC_` in this codebase, because Bundle B only
+  introduces the server-side gateway integration — no client-side Checkout widget exists yet. Do
+  not read it from a Client Component until that UI is built and the variable is deliberately
+  re-exposed with a `NEXT_PUBLIC_` prefix at that time.
+
+#### `RAZORPAY_KEY_SECRET` — server-only, secret
+
+- **Purpose:** authenticates server-side Razorpay API calls (order creation, payment capture,
+  refunds) and signs the HMAC used to verify the post-checkout signature Razorpay's client-side
+  widget returns. See
+  [razorpay-gateway-provider.ts](../modules/billing/infrastructure/payment-gateway/razorpay-gateway-provider.ts).
+- **Value:** Razorpay Dashboard → Settings → API Keys → Key Secret.
+- Never expose to the browser; never prefix with `NEXT_PUBLIC_`. Only
+  `modules/billing/infrastructure/payment-gateway/` reads it (via
+  [razorpay-env.ts](../modules/billing/infrastructure/payment-gateway/razorpay-env.ts)).
+
+#### `RAZORPAY_WEBHOOK_SECRET` — server-only, secret
+
+- **Purpose:** verifies the `X-Razorpay-Signature` header on inbound Razorpay webhook deliveries
+  (`HMAC-SHA256(rawBody, webhookSecret)`). Distinct from `RAZORPAY_KEY_SECRET` — configured
+  separately, in the Razorpay Dashboard's webhook settings, not the API Keys screen. See
+  [webhook-signature.helpers.ts](../modules/billing/infrastructure/payment-gateway/webhook-signature.helpers.ts).
+- **Value:** Razorpay Dashboard → Settings → Webhooks → (your webhook) → Secret.
+- Never expose to the browser; never prefix with `NEXT_PUBLIC_`. This is the sole trust boundary
+  for anything a Razorpay webhook claims — treat a leak of this value as equivalent in severity
+  to a leak of `RAZORPAY_KEY_SECRET`.
+
+### Platform Billing Identity
+
+Introduced in Phase 16 Bundle C (Payment & Subscription Management) for `modules/billing`'s
+invoice/receipt PDF generation — see
+[invoice-pdf.service.ts](../modules/billing/application/invoice-pdf.service.ts) and
+[platform-billing-identity.env.ts](../modules/billing/infrastructure/platform-billing-identity.env.ts).
+There is no Prisma model for the platform's own company identity (out of scope for this bundle),
+so environment configuration is the established mechanism for "who EduPilot itself is" when it
+issues an invoice or receipt to a tenant — the same pattern already used for every
+Razorpay/Supabase credential above.
+
+#### `PLATFORM_COMPANY_NAME` — server-only, not secret
+
+- **Purpose:** the legal/trading name printed as the "supplier"/issuer on every platform-issued
+  Subscription Invoice and Payment Receipt PDF.
+- **Value:** whatever legal name EduPilot's own operating entity trades under — set by whoever
+  deploys this application, not obtained from any third-party dashboard.
+- Not a secret — it appears on documents handed to tenants by design. Server-only simply because
+  it is only ever read while rendering a PDF server-side; there is no client-side use yet.
+
+#### `PLATFORM_COMPANY_ADDRESS` — server-only, not secret
+
+- **Purpose:** the registered/billing address printed alongside `PLATFORM_COMPANY_NAME` on the
+  same PDFs.
+- **Value:** set by whoever deploys this application.
+- Not a secret — same reasoning as `PLATFORM_COMPANY_NAME` above.
+
+#### `PLATFORM_GSTIN` — server-only, not secret
+
+- **Purpose:** the platform's own GSTIN (GST Identification Number), printed on every GST Tax
+  Invoice this application issues, exactly like any registered business prints its GSTIN on its
+  own outgoing invoices.
+- **Value:** the operating entity's real GSTIN, as issued by the Indian GST authorities — set by
+  whoever deploys this application.
+- Not a secret — a GSTIN is meant to be publicly disclosed on invoices; it grants no access to
+  anything and is not a credential.
+
 ## Adding a New Environment Variable
 
 1. Add it to [.env.example](../.env.example) with a placeholder value and a comment explaining
